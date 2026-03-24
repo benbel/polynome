@@ -1,75 +1,59 @@
 // original mode — Replication of stretta's monome Press Cafe video.
-// The amxd stores step-sequencer output patterns (which steps fire).
-// Reverse-engineering those into polynome's column=period system shows
-// the performer pressed only ~25 cells total.  Six patterns simulate
-// the performer gradually adding cells during the video.
+// The performer only had ~4-5 cells active at a time.  Each cell's
+// column sets its repeat period, so a handful of cells creates the
+// characteristic cascading polyrhythmic texture.
 
-// Velocity per column from amxd: 127 36 64 36 127 36 64 36 127 36 72 36 127 36 90 36
-// Cols 0,4,8,12 → vol 1 (strong beat); all others → vol 0.5
 const V = 0.5;
 
 function pat(cells) {
   return { grids: [{ cells, instrument: 'tone' }], melody: { cells: {}, instrument: 'tone' } };
 }
 
-// Pattern 1 — opening: 2 cells, 2 rows
+// Pattern 1 — 2 cells
 const p1 = pat({
   '3-12': 1,   // period 4
   '7-10': V,   // period 6
 });
 
-// Pattern 2 — 5 cells, 4 rows
+// Pattern 2 — 3 cells
 const p2 = pat({
   '0-14': V,   // period 2
-  '3-12': 1,
-  '6-10': V,
-  '7-10': V,  '7-7': V,
+  '3-12': 1,   // period 4
+  '7-10': V,   // period 6
 });
 
-// Pattern 3 — 10 cells, 6 rows
+// Pattern 3 — 4 cells
 const p3 = pat({
-  '0-14': V,
-  '1-12': 1,
-  '3-12': 1,  '3-8': 1,
-  '5-10': V,
-  '6-10': V,  '6-7': V,
-  '7-10': V,  '7-7': V,  '7-5': V,
+  '0-14': V,   // period 2
+  '1-12': 1,   // period 4
+  '5-10': V,   // period 6
+  '7-7': V,    // period 9
 });
 
-// Pattern 4 — 16 cells, all 8 rows
+// Pattern 4 — 5 cells
 const p4 = pat({
-  '0-14': V,
-  '1-12': 1,
-  '2-14': V,
-  '3-12': 1,  '3-8': 1,  '3-7': V,
-  '4-12': 1,  '4-8': 1,
-  '5-10': V,  '5-8': 1,  '5-7': V,
-  '6-10': V,  '6-7': V,
-  '7-10': V,  '7-7': V,  '7-5': V,
+  '0-14': V,   // period 2
+  '2-12': 1,   // period 4
+  '4-9': V,    // period 7
+  '6-7': V,    // period 9
+  '7-5': V,    // period 11
 });
 
-// Pattern 5 — 21 cells
+// Pattern 5 — 4 cells, different positions
 const p5 = pat({
-  '0-14': V,
-  '1-12': 1,
-  '2-14': V,  '2-12': 1,
-  '3-12': 1,  '3-8': 1,  '3-7': V,
-  '4-12': 1,  '4-9': V,  '4-8': 1,
-  '5-10': V,  '5-9': V,  '5-8': 1,  '5-7': V,
-  '6-10': V,  '6-7': V,  '6-5': V,
-  '7-10': V,  '7-7': V,  '7-5': V,  '7-6': V,
+  '1-12': 1,   // period 4
+  '3-8': 1,    // period 8
+  '5-10': V,   // period 6
+  '7-6': V,    // period 10
 });
 
-// Pattern 6 — 25 cells, full amxd equivalent
+// Pattern 6 — 5 cells, final variation
 const p6 = pat({
-  '0-14': V,
-  '1-12': 1,
-  '2-14': V,  '2-12': 1,
-  '3-12': 1,  '3-8': 1,  '3-7': V,  '3-5': V,
-  '4-12': 1,  '4-9': V,  '4-8': 1,  '4-7': V,
-  '5-10': V,  '5-9': V,  '5-8': 1,  '5-7': V,  '5-5': V,
-  '6-10': V,  '6-7': V,  '6-5': V,
-  '7-10': V,  '7-6': V,  '7-7': V,  '7-5': V,  '7-4': 1,
+  '0-14': V,   // period 2
+  '2-12': 1,   // period 4
+  '4-8': 1,    // period 8
+  '6-10': V,   // period 6
+  '7-5': V,    // period 11
 });
 
 export default {
