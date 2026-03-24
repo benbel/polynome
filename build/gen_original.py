@@ -15,13 +15,13 @@ from common import (
 # Default scale if no analysis available
 DEFAULT_FREQS = [440, 392, 330, 294, 262, 220, 196, 165]
 
-# Default envelope profile (clean, simple tone)
+# Brighter, more bell-like tone — joyful, sparkling character
 DEFAULT_ENVELOPE = {
-    'attack_ms': 3.0,
-    'decay_time': 0.28,
-    'harmonic_ratios': [1.0, 2.01, 3.98, 5.02, 6.97],
-    'harmonic_amplitudes_db': [0, -8, -15, -22, -30],
-    'inharmonicity_cents': [0, 17, -5, 8, -12],
+    'attack_ms': 2.0,
+    'decay_time': 0.35,
+    'harmonic_ratios': [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0],
+    'harmonic_amplitudes_db': [0, -5, -10, -14, -18, -22, -30],
+    'inharmonicity_cents': [0, 8, -3, 12, -5, 6, -8],
 }
 
 
@@ -46,8 +46,8 @@ def gen_tone(freq, env_profile, sr=SR):
     env = env_exp_decay(dur, env_profile['attack_ms'], env_profile['decay_time'], sr)
     sig *= env
 
-    # Very slight analog warmth
-    sig = asymmetric_saturate(sig, drive=1.1, asymmetry=0.05)
+    # Very gentle warmth — minimal saturation to keep brightness
+    sig = asymmetric_saturate(sig, drive=1.05, asymmetry=0.02)
 
     sig = normalize(sig, 0.85)
     fade_in(sig, env_profile['attack_ms'], sr)

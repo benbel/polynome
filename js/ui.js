@@ -9,7 +9,7 @@ import {
 import { loadMode } from './loader.js';
 
 // Available modes — lazy-loaded
-const MODE_IDS = ['texture', 'original', 'clear', 'voices', 'speech'];
+const MODE_IDS = ['original', 'texture', 'clear', 'voices', 'speech'];
 const modeCache = {};
 
 // ======================== MODE SWITCHING ========================
@@ -294,6 +294,8 @@ function buildUI(mode) {
 
   const melNWrap = document.getElementById('melN');
   if (melNWrap) melNWrap.style.display = hidden.includes('melody') ? 'none' : '';
+  const melNDispEl = document.getElementById('melNDisp');
+  if (melNDispEl) melNDispEl.style.display = hidden.includes('melody') ? 'none' : '';
 
   const canonToggle = document.getElementById('canonToggle');
   if (canonToggle) canonToggle.style.display = hidden.includes('melody') ? 'none' : '';
