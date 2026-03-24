@@ -38,7 +38,8 @@ export const state = {
   patButtons: [],
   melButtons: [],
   canonEnabled: false,
-  canonMode: 'crab',    // 'crab' | 'mirror' | 'table'
+  canonMode: 'interval', // 'interval' | 'crab' | 'mirror' | 'table'
+  canonInterval: 4,      // rows to shift for interval canon (default: alla quarta)
   canonCells: [],       // DOM elements for canon grid
   canonActive: {},      // computed from melActive
   trSteps: 16,
@@ -67,7 +68,10 @@ export function computeCanon() {
     const r = parseInt(rs), c = parseInt(cs);
     let nr = r, nc = c;
 
-    if (s.canonMode === 'crab') {
+    if (s.canonMode === 'interval') {
+      nr = r + s.canonInterval;
+      if (nr >= melRows) continue;
+    } else if (s.canonMode === 'crab') {
       nc = totalCols - 1 - c;
     } else if (s.canonMode === 'mirror') {
       nr = melRows - 1 - r;

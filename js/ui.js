@@ -241,7 +241,7 @@ function buildUI(mode) {
   const hasMelody = mode.melodyGrids && mode.melodyGrids.length > 0 && !hidden.includes('melody');
   if (hasMelody) {
     // Build canon mode buttons (crab, mirror, table)
-    for (const cm of ['crab', 'mirror', 'table']) {
+    for (const cm of ['interval', 'crab', 'mirror', 'table']) {
       const btn = document.createElement('button');
       btn.textContent = cm;
       btn.dataset.canon = cm;
