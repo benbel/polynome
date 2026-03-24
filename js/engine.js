@@ -122,21 +122,21 @@ export function initPatterns(mode) {
       for (let gi = 0; gi < mainGridsDef().length; gi++) {
         p.grids[gi] = { cells: {}, instrument: mainGridsDef()[gi].defaultInstrument };
       }
-      // Default melody: single voice spanning the full melody grid.
-      // Canon emerges only when the user enables the canon feature.
+      // Default melody: single non-repeating line filling every column.
+      // No canon-like structure — canon is a separate user-enabled feature.
       if (i === 0 && melGrids() && melGrids().length > 0) {
         const totalCols = melGrids().reduce((s, g) => s + g.cols, 0);
         const rows = melGrids()[0].rows;
         const mc = {};
-        // Extended melody line spanning the full grid — descending turns, leaps, stepwise motion.
-        // Each note placed every 2 columns; total length = totalCols.
-        const phrase = [1, 2, 3, 2, 1, 0, 1, 2, 3, 4, 3, 2, 1, 0, 2, 3,
-                        4, 5, 4, 3, 2, 1, 0, 1, 3, 2, 4, 3, 5, 4, 2, 1];
-        const noteCount = Math.min(phrase.length, Math.floor(totalCols / 2));
-        for (let j = 0; j < noteCount; j++) {
-          const r = Math.min(phrase[j], rows - 1);
-          const c = (j * 2) % totalCols;
-          mc[r + '-' + c] = 1;
+        // Walk through every column with gentle stepwise motion + occasional leaps.
+        // Start in the middle, wander without repeating a pattern.
+        let pitch = Math.floor(rows / 2);
+        const steps = [-1, 0, 1, -1, 1, 0, -2, 1, 1, 0, -1, 2, 0, -1, 1, -1,
+                       0, 1, -1, 0, 2, -1, 0, 1, -2, 1, 0, -1, 1, 0, -1, 1];
+        for (let c = 0; c < totalCols; c++) {
+          mc[pitch + '-' + c] = 1;
+          const step = steps[c % steps.length];
+          pitch = Math.max(0, Math.min(rows - 1, pitch + step));
         }
         p.melody.cells = mc;
       }

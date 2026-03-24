@@ -11,6 +11,7 @@ import { loadMode } from './loader.js';
 // Available modes — lazy-loaded
 const MODE_IDS = ['original', 'texture', 'clear', 'voices', 'speech'];
 const modeCache = {};
+const bufferCache = {}; // pre-loaded audio buffers per mode
 
 // ======================== MODE SWITCHING ========================
 
@@ -37,26 +38,30 @@ export async function switchMode(modeId) {
   const mode = modeCache[modeId];
   state.mode = mode;
 
-  // Show loading
-  const loading = document.getElementById('loading');
-  const main = document.getElementById('main');
-  const progressFill = document.getElementById('progress-fill');
-  const progressBar = document.getElementById('progress-bar');
-  loading.textContent = `loading ${modeId}...`;
-  loading.style.display = '';
-  progressBar.style.display = '';
-  progressFill.style.width = '0%';
-  main.style.display = 'none';
-
   // Init audio context (don't await resume — it needs a user gesture)
   if (!state.ctx) {
     state.ctx = new AudioContext();
   }
 
-  // Load buffers (decodeAudioData works on suspended contexts)
-  state.buffers = await loadMode(modeId, pct => {
-    progressFill.style.width = (pct * 100) + '%';
-  });
+  // Use cached buffers if available (preloaded), otherwise show loading UI
+  if (bufferCache[modeId]) {
+    state.buffers = bufferCache[modeId];
+  } else {
+    const loading = document.getElementById('loading');
+    const main = document.getElementById('main');
+    const progressFill = document.getElementById('progress-fill');
+    const progressBar = document.getElementById('progress-bar');
+    loading.textContent = `loading ${modeId}...`;
+    loading.style.display = '';
+    progressBar.style.display = '';
+    progressFill.style.width = '0%';
+    main.style.display = 'none';
+
+    state.buffers = await loadMode(modeId, pct => {
+      progressFill.style.width = (pct * 100) + '%';
+    });
+    bufferCache[modeId] = state.buffers;
+  }
 
   // Build effects chain
   buildEffects(mode.effects);
@@ -86,9 +91,9 @@ export async function switchMode(modeId) {
     bpmEl.textContent = Math.round(60000 / state.stepMs) + ' bpm';
   }
 
-  loading.style.display = 'none';
-  progressBar.style.display = 'none';
-  main.style.display = 'flex';
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('progress-bar').style.display = 'none';
+  document.getElementById('main').style.display = 'flex';
 
   // Load first pattern into state and auto-play
   const { loadPat } = await import('./engine.js');
@@ -309,29 +314,23 @@ function buildUI(mode) {
     canonWrap.style.display = 'none';
   }
 
-  // Controls visibility
-  document.getElementById('cycleToggle').parentElement.querySelector('#cycleLen') && (
-    document.getElementById('cycleToggle').style.display = hidden.includes('cycle') ? 'none' : '',
-    document.getElementById('cycleLen').style.display = hidden.includes('cycle') ? 'none' : '',
-    document.getElementById('cycleDisp').style.display = hidden.includes('cycle') ? 'none' : ''
-  );
+  // Controls visibility — cycle controls always visible, melody controls hidden when melody is hidden
+  const hideMelody = hidden.includes('melody');
 
-  const melNWrap = document.getElementById('melN');
-  if (melNWrap) melNWrap.style.display = hidden.includes('melody') ? 'none' : '';
-  const melNDispEl = document.getElementById('melNDisp');
-  if (melNDispEl) melNDispEl.style.display = hidden.includes('melody') ? 'none' : '';
+  // Cycle controls: always shown (relevant for all modes including original)
+  document.getElementById('cycleToggle').style.display = '';
+  document.getElementById('cycleLen').style.display = '';
+  document.getElementById('cycleDisp').style.display = '';
 
-  const canonToggle = document.getElementById('canonToggle');
-  if (canonToggle) canonToggle.style.display = hidden.includes('melody') ? 'none' : '';
-
-  const balEl = document.getElementById('balance');
-  if (balEl) balEl.style.display = hidden.includes('melody') ? 'none' : '';
-  const balDispEl = document.getElementById('balDisp');
-  if (balDispEl) balDispEl.style.display = hidden.includes('melody') ? 'none' : '';
+  // Melody-related controls
+  document.getElementById('melN').style.display = hideMelody ? 'none' : '';
+  document.getElementById('melNDisp').style.display = hideMelody ? 'none' : '';
+  document.getElementById('canonToggle').style.display = hideMelody ? 'none' : '';
+  document.getElementById('balance').style.display = hideMelody ? 'none' : '';
+  document.getElementById('balDisp').style.display = hideMelody ? 'none' : '';
 
   // Hide grid toggle for original (already 8x16)
-  const gridToggle = document.getElementById('gridToggle');
-  if (gridToggle) gridToggle.style.display = mode.id === 'original' ? 'none' : '';
+  document.getElementById('gridToggle').style.display = mode.id === 'original' ? 'none' : '';
 }
 
 // ======================== CELL TOGGLES ========================
@@ -496,6 +495,25 @@ export function initApp() {
     });
   });
 
-  // Auto-start default mode
-  switchMode('original');
+  // Auto-start default mode, then preload all others in background
+  switchMode('original').then(() => preloadAllModes());
+}
+
+// Preload all mode configs and audio buffers in the background
+async function preloadAllModes() {
+  for (const id of MODE_IDS) {
+    // Load mode config
+    if (!modeCache[id]) {
+      try {
+        const mod = await import(`./modes/${id}.js`);
+        modeCache[id] = mod.default;
+      } catch (e) { /* ignore */ }
+    }
+    // Load audio buffers
+    if (!bufferCache[id]) {
+      try {
+        bufferCache[id] = await loadMode(id, () => {});
+      } catch (e) { /* ignore */ }
+    }
+  }
 }
