@@ -10,7 +10,7 @@ import numpy as np
 from common import (
     SR, sine, noise,
     env_adsr, env_exp_decay, lowpass, highpass, bandpass,
-    tanh_saturate, normalize, fade_in, fade_out,
+    normalize, fade_in, fade_out,
     to_stereo, export_ogg, write_manifest, generate_reverb_ir,
 )
 
@@ -77,7 +77,7 @@ def gen_vowels(freq, sr=SR):
             shifted[:n + offset] = src[-offset:]
         sig[:n] = sig[:n] + shifted * 0.3
 
-    sig = tanh_saturate(sig[:n], 1.3)
+    sig = sig[:n]
     env = env_adsr(dur, 0.01, 0.05, 0.7, 0.1, sr)
     sig *= env[:len(sig)]
 
@@ -210,7 +210,6 @@ def gen_syllables(freq, sr=SR):
     end = min(vowel_start + len(vowel), n)
     sig[vowel_start:end] += vowel[:end - vowel_start]
 
-    sig = tanh_saturate(sig, 1.3)
     env = env_adsr(dur, 0.02, 0.05, 0.7, 0.15, sr)
     sig *= env[:len(sig)]
 
