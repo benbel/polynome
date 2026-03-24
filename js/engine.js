@@ -160,6 +160,7 @@ export function savePat(idx) {
 
 export function loadPat(idx) {
   const s = state;
+  const mode = s.mode;
   s.oldActives = [];
   s.oldInsts = [];
   for (let gi = 0; gi < s.grids.length; gi++) {
@@ -205,8 +206,6 @@ export function loadPat(idx) {
   s.melInstrument = mp.instrument;
   for (const b of s.melButtons) b.className = b.dataset.inst === s.melInstrument ? 'sel' : '';
   for (const k of Object.keys(mp.cells)) s.melActive[k] = { vol: mp.cells[k] };
-
-  const mode = s.mode;
   if (melGrids()) {
     const totalMelCols = melGrids().reduce((s, g) => s + g.cols, 0);
     const melRows = melGrids()[0].rows;
