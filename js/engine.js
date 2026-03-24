@@ -37,6 +37,12 @@ export const state = {
   cycleSteps: 64,
   patButtons: [],
   melButtons: [],
+  canonEnabled: false,
+  canonMode: 'simple',   // 'simple' | 'interval' | 'crab' | 'mirror' | 'table'
+  canonInterval: 4,      // rows to shift for interval canon (default: alla quarta)
+  canonOffset: 8,        // columns to shift for simple/interval canon
+  canonCells: [],       // DOM elements for canon grid
+  canonActive: {},      // computed from melActive
   trSteps: 16,
   trRem: 0,
   oldActives: [],
@@ -47,17 +53,82 @@ export const state = {
   modePatterns: {},   // per-mode pattern storage
 };
 
+// ======================== CANON ========================
+
+export function computeCanon() {
+  const s = state;
+  const mode = s.mode;
+  if (!mode || !mode.melodyGrids || !s.canonEnabled) { s.canonActive = {}; return; }
+
+  const totalCols = mode.melodyGrids.reduce((sum, g) => sum + g.cols, 0);
+  const melRows = mode.melodyGrids[0].rows;
+  const result = {};
+
+  for (const k of Object.keys(s.melActive)) {
+    const [rs, cs] = k.split('-');
+    const r = parseInt(rs), c = parseInt(cs);
+    let nr = r, nc = c;
+
+    if (s.canonMode === 'simple') {
+      nc = (c + s.canonOffset) % totalCols;
+    } else if (s.canonMode === 'interval') {
+      nr = r + s.canonInterval;
+      nc = (c + s.canonOffset) % totalCols;
+      if (nr >= melRows) continue;
+    } else if (s.canonMode === 'crab') {
+      nc = totalCols - 1 - c;
+    } else if (s.canonMode === 'mirror') {
+      nr = melRows - 1 - r;
+    } else if (s.canonMode === 'table') {
+      nr = melRows - 1 - r;
+      nc = totalCols - 1 - c;
+    }
+
+    result[nr + '-' + nc] = { vol: s.melActive[k].vol };
+  }
+
+  s.canonActive = result;
+}
+
 // ======================== PATTERNS ========================
 
 export function initPatterns(mode) {
   const n = mode.numPatterns || 8;
   state.patterns = [];
+  const defaults = mode.defaultPatterns || [];
   for (let i = 0; i < n; i++) {
-    const p = { grids: [], melody: { cells: {}, instrument: mode.melodyDefaultInstrument || 'pad' } };
-    for (let gi = 0; gi < mode.mainGrids.length; gi++) {
-      p.grids[gi] = { cells: {}, instrument: mode.mainGrids[gi].defaultInstrument };
+    if (i < defaults.length) {
+      state.patterns[i] = JSON.parse(JSON.stringify(defaults[i]));
+    } else {
+      const p = { grids: [], melody: { cells: {}, instrument: mode.melodyDefaultInstrument || 'pad' } };
+      for (let gi = 0; gi < mode.mainGrids.length; gi++) {
+        p.grids[gi] = { cells: {}, instrument: mode.mainGrids[gi].defaultInstrument };
+      }
+      // Default melody: Goldberg Variation 12 — Canone alla Quarta (BWV 988)
+      // Simplified to 8-row grid. Dux enters, comes enters a 4th below offset.
+      if (i === 0 && mode.melodyGrids && mode.melodyGrids.length > 0) {
+        const totalCols = mode.melodyGrids.reduce((s, g) => s + g.cols, 0);
+        const rows = mode.melodyGrids[0].rows;
+        const mc = {};
+        // Dux — opening subject of Variation 12 (descending turn, ascending leap, stepwise descent)
+        // Row 0=highest pitch, row 7=lowest. Mapped to nearest scale degrees.
+        const dux =    [1, 2, 3, 2, 1, 0, 1, 2, 0, 1, 2, 3, 4, 3, 2, 1];
+        const duxCol = [0, 2, 4, 6, 8,10,12,14,18,20,22,24,28,30,32,34];
+        for (let j = 0; j < dux.length; j++) {
+          const r = Math.min(dux[j], rows - 1);
+          const c = duxCol[j] % totalCols;
+          mc[r + '-' + c] = 1;
+        }
+        // Comes — a 4th below (4 rows down), entering 8 steps later
+        for (let j = 0; j < dux.length; j++) {
+          const r = Math.min(dux[j] + 4, rows - 1);
+          const c = (duxCol[j] + 8) % totalCols;
+          mc[r + '-' + c] = 0.5;
+        }
+        p.melody.cells = mc;
+      }
+      state.patterns[i] = p;
     }
-    state.patterns[i] = p;
   }
 }
 
@@ -135,6 +206,8 @@ export function loadPat(idx) {
   for (let i = 0; i < s.patButtons.length; i++) {
     s.patButtons[i].className = i === s.currentPattern ? 'pat-btn sel' : 'pat-btn';
   }
+
+  computeCanon();
 }
 
 export function selectPat(idx) {
@@ -351,6 +424,24 @@ export function tick() {
         else applyStyle(s.melCells[r][c], STYLES.OFF);
       }
     }
+
+    // Canon grid
+    if (s.canonEnabled) {
+      for (let r = 0; r < melRows; r++) {
+        for (let c = 0; c < totalMelCols; c++) {
+          if (!s.canonCells[r] || !s.canonCells[r][c]) continue;
+          const a = s.canonActive[r + '-' + c];
+          const isCursor = (c === mc);
+          if (a && isCursor) {
+            applyStyle(s.canonCells[r][c], STYLES.TRIG);
+            if (s.step % s.melN === 0) playNote(s.melInstrument, r, a.vol * newV, t);
+          } else if (a && a.vol >= 1) applyStyle(s.canonCells[r][c], STYLES.FULL);
+          else if (a) applyStyle(s.canonCells[r][c], STYLES.HALF);
+          else if (isCursor) applyStyle(s.canonCells[r][c], STYLES.LIT);
+          else applyStyle(s.canonCells[r][c], STYLES.OFF);
+        }
+      }
+    }
   }
 
   s.step++;
@@ -425,6 +516,7 @@ export function resetAll() {
   state.currentPattern = 0;
   for (let i = 0; i < state.patButtons.length; i++)
     state.patButtons[i].className = i === 0 ? 'pat-btn sel' : 'pat-btn';
+  computeCanon();
 }
 
 // ======================== SAVE / LOAD ========================
@@ -505,11 +597,28 @@ export function randomize() {
     const g = state.grids[gi];
     const rows = g.rows, cols = g.cols;
     const cells = {};
-    const nA = randInt(1, 3);
-    const rowPool = shuffle([...Array(rows).keys()]);
-    for (let i = 0; i < nA; i++) {
-      const p = pick(primes.filter(x => x <= cols));
-      cells[rowPool[i] + '-' + (cols - p)] = Math.random() > 0.4 ? 1 : 0.5;
+    // Fill 15-40% of cells using rhythmic intervals
+    const density = 0.15 + Math.random() * 0.25;
+    const targetCells = Math.round(rows * cols * density);
+    // Pick a few active rows with varying densities
+    const activeRows = shuffle([...Array(rows).keys()]).slice(0, randInt(3, Math.min(rows, 6)));
+    let placed = 0;
+    for (const row of activeRows) {
+      const interval = pick(primes.filter(x => x <= cols));
+      const offset = randInt(0, interval - 1);
+      for (let c = offset; c < cols; c += interval) {
+        if (placed < targetCells) {
+          cells[row + '-' + c] = Math.random() > 0.3 ? 1 : 0.5;
+          placed++;
+        }
+      }
+      // Scatter a few extra hits on this row
+      const extras = randInt(0, 3);
+      for (let e = 0; e < extras && placed < targetCells; e++) {
+        const c = randInt(0, cols - 1);
+        cells[row + '-' + c] = Math.random() > 0.5 ? 1 : 0.5;
+        placed++;
+      }
     }
     state.patterns[0].grids[gi] = { cells, instrument: pick(mode.mainInstruments).id };
   }
@@ -519,32 +628,59 @@ export function randomize() {
     const totalCols = mode.melodyGrids.reduce((s, g) => s + g.cols, 0);
     const melRows = mode.melodyGrids[0].rows;
     const mc = {};
-    const nV = randInt(2, 4);
-    const rw = shuffle([...Array(melRows).keys()]).slice(0, nV);
-    const pr = shuffle(primes).slice(0, nV);
-    for (let i = 0; i < nV; i++) {
-      if (pr[i] <= totalCols) mc[rw[i] + '-' + (totalCols - pr[i])] = Math.random() > 0.4 ? 1 : 0.5;
+    const nV = randInt(3, Math.min(melRows, 6));
+    const activeRows = shuffle([...Array(melRows).keys()]).slice(0, nV);
+    for (const row of activeRows) {
+      const interval = pick(primes.filter(x => x <= totalCols));
+      const offset = randInt(0, interval - 1);
+      for (let c = offset; c < totalCols; c += interval) {
+        mc[row + '-' + c] = Math.random() > 0.3 ? 1 : 0.5;
+      }
+      const extras = randInt(0, 2);
+      for (let e = 0; e < extras; e++) {
+        mc[row + '-' + randInt(0, totalCols - 1)] = Math.random() > 0.5 ? 1 : 0.5;
+      }
     }
     state.patterns[0].melody = { cells: mc, instrument: pick(mode.melodyInstruments || []).id || mode.melodyDefaultInstrument };
   }
 
-  // Mutate into other pattern slots
+  // Mutate into other pattern slots — each progressively more different
   for (let pi = 1; pi < state.patterns.length; pi++) {
     for (let gi = 0; gi < state.grids.length; gi++) {
       const base = state.patterns[0].grids[gi];
-      const cells = { ...base.cells };
-      // Random mutations
-      if (Math.random() > 0.5) {
-        const k = Object.keys(cells);
-        if (k.length > 0) delete cells[pick(k)];
-      }
       const g = state.grids[gi];
-      const p = pick(primes.filter(x => x <= g.cols));
-      const r = randInt(0, g.rows - 1);
-      cells[r + '-' + (g.cols - p)] = Math.random() > 0.5 ? 1 : 0.5;
+      const cells = { ...base.cells };
+      const mutations = randInt(2, 5 + pi);
+      for (let m = 0; m < mutations; m++) {
+        if (Math.random() > 0.4) {
+          // Add a cell
+          const r = randInt(0, g.rows - 1);
+          const c = randInt(0, g.cols - 1);
+          cells[r + '-' + c] = Math.random() > 0.5 ? 1 : 0.5;
+        } else {
+          // Remove a cell
+          const k = Object.keys(cells);
+          if (k.length > 0) delete cells[pick(k)];
+        }
+      }
       state.patterns[pi].grids[gi] = { cells, instrument: base.instrument };
     }
-    state.patterns[pi].melody = { ...state.patterns[0].melody, cells: { ...state.patterns[0].melody.cells } };
+    if (mode.melodyGrids) {
+      const baseMel = state.patterns[0].melody;
+      const mc = { ...baseMel.cells };
+      const totalCols = mode.melodyGrids.reduce((s, g) => s + g.cols, 0);
+      const melRows = mode.melodyGrids[0].rows;
+      const mutations = randInt(1, 3 + pi);
+      for (let m = 0; m < mutations; m++) {
+        if (Math.random() > 0.4) {
+          mc[randInt(0, melRows - 1) + '-' + randInt(0, totalCols - 1)] = Math.random() > 0.5 ? 1 : 0.5;
+        } else {
+          const k = Object.keys(mc);
+          if (k.length > 0) delete mc[pick(k)];
+        }
+      }
+      state.patterns[pi].melody = { cells: mc, instrument: baseMel.instrument };
+    }
   }
 
   state.currentPattern = 0;
