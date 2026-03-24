@@ -76,9 +76,10 @@ export async function switchMode(modeId) {
   progressBar.style.display = 'none';
   main.style.display = 'flex';
 
-  // Load first pattern into state
+  // Load first pattern into state and auto-play
   const { loadPat } = await import('./engine.js');
   loadPat(state.currentPattern);
+  start();
   updateCtl();
 }
 
