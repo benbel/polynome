@@ -337,12 +337,12 @@ export default {
 
   // Synthesis fallback — used when pre-rendered assets aren't available
   renderers: { sub: renderSub, fm: renderFm, glass: renderGlass, tape: renderTape, dust: renderDust, pad: renderPad, organ: renderOrgan, piano: renderPiano },
-  durations: { sub: 2.0, fm: 2.2, glass: 2.6, tape: 2.4, dust: 1.2, pad: 3.5, organ: 2.8, piano: 2.4 },
+  durations: { sub: 2.0, fm: 1.6, glass: 2.6, tape: 2.4, dust: 1.2, pad: 3.5, organ: 2.8, piano: 2.4 },
   crush: {
     sub: { bits: 8, down: 5, tape: 2.5 }, fm: { bits: 10, down: 3, tape: 2.0 },
-    glass: { bits: 11, down: 2, tape: 1.6 }, tape: { bits: 10, down: 4, tape: 2.8 },
-    dust: { bits: 9, down: 3, tape: 2.0 }, pad: { bits: 10, down: 3, tape: 1.8 },
-    organ: { bits: 12, down: 2, tape: 1.4 }, piano: { bits: 13, down: 1, tape: 1.2 },
+    glass: { bits: 14, down: 1, tape: 1.1 }, tape: { bits: 9, down: 5, tape: 3.2 },
+    dust: { bits: 9, down: 3, tape: 2.0 }, pad: { bits: 13, down: 1, tape: 1.2 },
+    organ: { bits: 12, down: 2, tape: 1.4 }, piano: { bits: 15, down: 1, tape: 1.0 },
   },
   fadeConfig: {
     sub: { fadeIn: 40, fadeOut: 80 }, fm: { fadeIn: 30, fadeOut: 60 },

@@ -18,18 +18,18 @@ FREQS = [523, 440, 370, 311, 262, 220, 175, 147, 123, 104, 82, 65, 55, 44, 33, 2
 MEL_FREQS = [659, 523, 440, 349, 262, 220, 175, 131]
 
 DURATIONS = {
-    'sub': 2.0, 'fm': 2.2, 'glass': 2.6, 'tape': 2.4, 'dust': 1.2,
+    'sub': 2.0, 'fm': 1.6, 'glass': 2.6, 'tape': 2.4, 'dust': 1.2,
     'pad': 3.5, 'organ': 2.8, 'piano': 2.4,
 }
 
 CRUSH = {
-    'sub': (8, 5, 2.5), 'fm': (10, 3, 2.0), 'glass': (11, 2, 1.6),
-    'tape': (10, 4, 2.8), 'dust': (9, 3, 2.0), 'pad': (10, 3, 1.8),
-    'organ': (12, 2, 1.4), 'piano': (13, 1, 1.2),
+    'sub': (8, 5, 2.5), 'fm': (10, 3, 2.0), 'glass': (14, 1, 1.1),
+    'tape': (9, 5, 3.2), 'dust': (9, 3, 2.0), 'pad': (13, 1, 1.2),
+    'organ': (12, 2, 1.4), 'piano': (15, 1, 1.0),
 }
 
 FADE = {
-    'sub': (40, 80), 'fm': (30, 60), 'glass': (20, 50), 'tape': (35, 70),
+    'sub': (40, 80), 'fm': (20, 40), 'glass': (20, 50), 'tape': (35, 70),
     'dust': (8, 20), 'pad': (60, 120), 'organ': (15, 40), 'piano': (5, 30),
 }
 
@@ -91,6 +91,7 @@ def gen_sub(freq, sr=SR):
 
 
 def gen_fm(freq, sr=SR):
+    """Shorter percussive FM — metallic, punchy."""
     f = freq
     dur = DURATIONS['fm']
     n = int(sr * dur)
@@ -173,42 +174,54 @@ def gen_glass(freq, sr=SR):
 
 
 def gen_tape(freq, sr=SR):
+    """Tape degradation — heavy wow/flutter, dropout artifacts, saturated warmth."""
     f = freq
     dur = DURATIONS['tape']
     n = int(sr * dur)
     t = np.arange(n) / sr
 
-    # 6 sines with wow/flutter
+    # 6 sines with exaggerated wow/flutter (more degradation than pad)
     voices = []
     detunes = [-15, -8, -3, 3, 8, 15]
     pans = [-0.7, -0.35, -0.1, 0.1, 0.35, 0.7]
-    wow_rates = [0.6, 0.45, 0.7, 0.55, 0.8, 0.5]
-    wow_depths = [3, 4.5, 2.5, 5, 3.5, 4]
+    wow_rates = [0.4, 0.35, 0.55, 0.45, 0.6, 0.38]
+    wow_depths = [8, 12, 6, 14, 9, 11]  # Much deeper wow
 
     for i in range(6):
         wow = np.sin(2 * np.pi * wow_rates[i] * t) * wow_depths[i]
-        inst_freq = f * (2 ** ((detunes[i] + wow) / 1200))
+        # Add flutter (higher freq pitch wobble)
+        flutter = np.sin(2 * np.pi * (4.5 + i * 0.3) * t) * 2.5
+        inst_freq = f * (2 ** ((detunes[i] + wow + flutter) / 1200))
         voice = np.sin(2 * np.pi * np.cumsum(inst_freq / sr))
         voices.append(to_stereo(voice * 0.18, pans[i]))
 
     mix = mix_stereo(*voices)[:n]
 
-    # Asymmetric saturation
+    # Heavy asymmetric saturation (tape compression character)
     for ch in range(2):
         x = mix[:, ch]
-        mix[:, ch] = np.where(x > 0, np.tanh(x * 2.5) / 2.5 * 2, np.tanh(x * 1.5) / 1.5)
+        mix[:, ch] = np.where(x > 0, np.tanh(x * 3.0) / 3.0 * 2.5, np.tanh(x * 2.0) / 2.0)
 
-    # LP + peaking EQ (approximated)
+    # Low-pass with frequency-relative cutoff
     for ch in range(2):
-        mix[:, ch] = lowpass(mix[:, ch], f * 3.5, sr)
+        mix[:, ch] = lowpass(mix[:, ch], min(f * 3.5, sr / 2 - 100), sr)
 
-    # Tape hiss
-    hiss = stereo_noise(dur, sr) * 0.06
+    # Tape hiss — more prominent
+    hiss = stereo_noise(dur, sr) * 0.10
     for ch in range(2):
-        hiss[:, ch] = lowpass(hiss[:, ch], f * 4, sr)
-        hiss[:, ch] = highpass(hiss[:, ch], f * 0.5, sr)
+        hiss[:, ch] = lowpass(hiss[:, ch], min(f * 4, sr / 2 - 100), sr)
+        hiss[:, ch] = highpass(hiss[:, ch], max(20, f * 0.5), sr)
+
+    # Dropout artifacts — brief amplitude dips
+    dropout_env = np.ones(n)
+    for _ in range(3):
+        pos = np.random.randint(int(n * 0.1), int(n * 0.8))
+        width = np.random.randint(int(sr * 0.01), int(sr * 0.04))
+        end = min(pos + width, n)
+        dropout_env[pos:end] *= 0.3 + np.random.random() * 0.4
 
     result = mix_stereo(mix, hiss[:n])
+    result *= dropout_env[:, np.newaxis]
     env = env_adsr(dur, 0.04, 0.1, 0.7, 0.3, sr)
     result *= env[:, np.newaxis]
     return result

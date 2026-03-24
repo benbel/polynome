@@ -1,5 +1,6 @@
-// clear mode — Crystalline analog synthesis (Wendy Carlos)
-// Moog ladder filters, precise clean synthesis, microtonal options
+// clear mode — Early electronic / Kraftwerk-to-Warp
+// Precise, crystalline, mechanical. Sharp envelopes, clean synthesis.
+// One warm element (strings) against a cold backdrop.
 
 export default {
   id: 'clear',
@@ -7,7 +8,7 @@ export default {
 
   mainGrids: [
     { rows: 16, cols: 32, defaultInstrument: 'moog_bass' },
-    { rows: 16, cols: 32, defaultInstrument: 'moog_lead' },
+    { rows: 16, cols: 32, defaultInstrument: 'pluck' },
     { rows: 16, cols: 32, defaultInstrument: 'string_machine' },
     { rows: 16, cols: 32, defaultInstrument: 'bell' },
   ],
@@ -21,7 +22,7 @@ export default {
 
   mainInstruments: [
     { id: 'moog_bass', label: 'moog bass' },
-    { id: 'moog_lead', label: 'moog lead' },
+    { id: 'pluck', label: 'pluck' },
     { id: 'string_machine', label: 'strings' },
     { id: 'sync', label: 'sync' },
     { id: 'bell', label: 'bell' },
@@ -34,7 +35,7 @@ export default {
 
   fx: {
     moog_bass: { delay: 0.06, reverb: 0.06, gain: 0.28 },
-    moog_lead: { delay: 0.10, reverb: 0.10, gain: 0.24 },
+    pluck: { delay: 0.10, reverb: 0.10, gain: 0.26 },
     string_machine: { delay: 0.12, reverb: 0.15, gain: 0.18 },
     sync: { delay: 0.08, reverb: 0.10, gain: 0.22 },
     bell: { delay: 0.15, reverb: 0.18, gain: 0.16 },

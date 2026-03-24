@@ -1,5 +1,6 @@
-// voices mode — Extended vocal technique (Roomful of Teeth, Meredith Monk)
-// Glottal pulse synthesis + formant filters, all synthesized
+// voices mode — Choir discovering music (Roomful of Teeth, Meredith Monk)
+// Long sustained vowels, human vibrato, overtone singing.
+// Percussive clicks for rhythmic contrast against sustained vocal tones.
 
 export default {
   id: 'voices',
@@ -24,7 +25,7 @@ export default {
     { id: 'overtone', label: 'overtone' },
     { id: 'breath', label: 'breath' },
     { id: 'belt', label: 'belt' },
-    { id: 'hum', label: 'hum' },
+    { id: 'click', label: 'click' },
   ],
   melodyInstruments: [
     { id: 'aah', label: 'aah' },
@@ -37,10 +38,10 @@ export default {
     overtone: { delay: 0.10, reverb: 0.15, gain: 0.22 },
     breath: { delay: 0.12, reverb: 0.18, gain: 0.18 },
     belt: { delay: 0.06, reverb: 0.08, gain: 0.28 },
-    hum: { delay: 0.08, reverb: 0.12, gain: 0.24 },
-    aah: { delay: 0.06, reverb: 0.08, gain: 0.24 },
-    ooh: { delay: 0.06, reverb: 0.08, gain: 0.22 },
-    mmm: { delay: 0.05, reverb: 0.06, gain: 0.24 },
+    click: { delay: 0.06, reverb: 0.08, gain: 0.30 },
+    aah: { delay: 0.10, reverb: 0.20, gain: 0.22 },
+    ooh: { delay: 0.10, reverb: 0.20, gain: 0.20 },
+    mmm: { delay: 0.08, reverb: 0.15, gain: 0.22 },
   },
 
   effects: {
