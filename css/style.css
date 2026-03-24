@@ -83,6 +83,12 @@ body {
 }
 #mel-grids { display: flex; gap: 16px; }
 
+#canon-wrap {
+  display: none; flex-direction: column; align-items: center;
+  border-top: 1px solid #ddd; padding-top: 12px;
+}
+#canon-grids { display: flex; gap: 16px; }
+
 input[type=range] {
   -webkit-appearance: none; appearance: none;
   width: 80px; height: 1px; background: #999; outline: none;

@@ -4,7 +4,7 @@ import {
   state, STYLES, applyStyle,
   initPatterns, selectPat, buildEffects,
   start, stop, restartTimer, resetAll, randomize,
-  saveSong, loadSong,
+  saveSong, loadSong, computeCanon,
 } from './engine.js';
 import { loadMode } from './loader.js';
 
@@ -229,6 +229,62 @@ function buildUI(mode) {
     melWrap.style.display = 'none';
   }
 
+  // Canon section
+  const canonWrap = document.getElementById('canon-wrap');
+  const canonModeBar = document.getElementById('canon-mode-bar');
+  const canonGridsDiv = document.getElementById('canon-grids');
+  canonModeBar.innerHTML = '';
+  canonGridsDiv.innerHTML = '';
+  state.canonCells = [];
+  state.canonButtons = [];
+
+  const hasMelody = mode.melodyGrids && mode.melodyGrids.length > 0 && !hidden.includes('melody');
+  if (hasMelody) {
+    // Build canon mode buttons (crab, mirror, table)
+    for (const cm of ['crab', 'mirror', 'table']) {
+      const btn = document.createElement('button');
+      btn.textContent = cm;
+      btn.dataset.canon = cm;
+      if (cm === state.canonMode) btn.className = 'sel';
+      btn.addEventListener('click', function () {
+        state.canonMode = this.dataset.canon;
+        for (const b of state.canonButtons) b.className = '';
+        this.className = 'sel';
+        computeCanon();
+      });
+      canonModeBar.appendChild(btn);
+      state.canonButtons.push(btn);
+    }
+
+    // Build read-only canon grid (same dimensions as melody)
+    const melRows = mode.melodyGrids[0].rows;
+    for (let r = 0; r < melRows; r++) state.canonCells[r] = [];
+
+    for (let mg = 0; mg < mode.melodyGrids.length; mg++) {
+      const mgDef = mode.melodyGrids[mg];
+      const gel = document.createElement('div');
+      gel.className = 'grid';
+      gel.style.gridTemplateColumns = `repeat(${mgDef.cols}, ${cellSize}px)`;
+      for (let r = 0; r < mgDef.rows; r++) {
+        for (let lc = 0; lc < mgDef.cols; lc++) {
+          const gc = mg > 0 ? mode.melodyGrids.slice(0, mg).reduce((s, g) => s + g.cols, 0) + lc : lc;
+          const el = document.createElement('div');
+          el.className = 'cell';
+          el.style.width = cellSize + 'px';
+          el.style.height = cellSize + 'px';
+          el.style.cursor = 'default';
+          gel.appendChild(el);
+          state.canonCells[r][gc] = el;
+        }
+      }
+      canonGridsDiv.appendChild(gel);
+    }
+
+    canonWrap.style.display = state.canonEnabled ? 'flex' : 'none';
+  } else {
+    canonWrap.style.display = 'none';
+  }
+
   // Controls visibility
   document.getElementById('cycleToggle').parentElement.querySelector('#cycleLen') && (
     document.getElementById('cycleToggle').style.display = hidden.includes('cycle') ? 'none' : '',
@@ -238,6 +294,9 @@ function buildUI(mode) {
 
   const melNWrap = document.getElementById('melN');
   if (melNWrap) melNWrap.style.display = hidden.includes('melody') ? 'none' : '';
+
+  const canonToggle = document.getElementById('canonToggle');
+  if (canonToggle) canonToggle.style.display = hidden.includes('melody') ? 'none' : '';
 }
 
 // ======================== CELL TOGGLES ========================
@@ -271,6 +330,7 @@ function toggleMel(r, c) {
     delete state.melActive[k];
     applyStyle(state.melCells[r][c], STYLES.OFF);
   }
+  computeCanon();
   if (!state.playing) start();
   updateCtl();
 }
@@ -337,6 +397,14 @@ export function initApp() {
   document.getElementById('cycleToggle').addEventListener('click', () => {
     state.autoCycle = !state.autoCycle;
     document.getElementById('cycleToggle').textContent = state.autoCycle ? 'cycle on' : 'cycle off';
+  });
+
+  document.getElementById('canonToggle').addEventListener('click', () => {
+    state.canonEnabled = !state.canonEnabled;
+    document.getElementById('canonToggle').textContent = state.canonEnabled ? 'canon on' : 'canon off';
+    const canonWrap = document.getElementById('canon-wrap');
+    canonWrap.style.display = state.canonEnabled ? 'flex' : 'none';
+    computeCanon();
   });
 
   document.getElementById('btn-reset').addEventListener('click', () => { resetAll(); updateCtl(); });

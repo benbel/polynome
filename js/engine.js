@@ -37,6 +37,10 @@ export const state = {
   cycleSteps: 64,
   patButtons: [],
   melButtons: [],
+  canonEnabled: false,
+  canonMode: 'crab',    // 'crab' | 'mirror' | 'table'
+  canonCells: [],       // DOM elements for canon grid
+  canonActive: {},      // computed from melActive
   trSteps: 16,
   trRem: 0,
   oldActives: [],
@@ -46,6 +50,37 @@ export const state = {
   mode: null,        // current mode config
   modePatterns: {},   // per-mode pattern storage
 };
+
+// ======================== CANON ========================
+
+export function computeCanon() {
+  const s = state;
+  const mode = s.mode;
+  if (!mode || !mode.melodyGrids || !s.canonEnabled) { s.canonActive = {}; return; }
+
+  const totalCols = mode.melodyGrids.reduce((sum, g) => sum + g.cols, 0);
+  const melRows = mode.melodyGrids[0].rows;
+  const result = {};
+
+  for (const k of Object.keys(s.melActive)) {
+    const [rs, cs] = k.split('-');
+    const r = parseInt(rs), c = parseInt(cs);
+    let nr = r, nc = c;
+
+    if (s.canonMode === 'crab') {
+      nc = totalCols - 1 - c;
+    } else if (s.canonMode === 'mirror') {
+      nr = melRows - 1 - r;
+    } else if (s.canonMode === 'table') {
+      nr = melRows - 1 - r;
+      nc = totalCols - 1 - c;
+    }
+
+    result[nr + '-' + nc] = { vol: s.melActive[k].vol };
+  }
+
+  s.canonActive = result;
+}
 
 // ======================== PATTERNS ========================
 
@@ -140,6 +175,8 @@ export function loadPat(idx) {
   for (let i = 0; i < s.patButtons.length; i++) {
     s.patButtons[i].className = i === s.currentPattern ? 'pat-btn sel' : 'pat-btn';
   }
+
+  computeCanon();
 }
 
 export function selectPat(idx) {
@@ -356,6 +393,24 @@ export function tick() {
         else applyStyle(s.melCells[r][c], STYLES.OFF);
       }
     }
+
+    // Canon grid
+    if (s.canonEnabled) {
+      for (let r = 0; r < melRows; r++) {
+        for (let c = 0; c < totalMelCols; c++) {
+          if (!s.canonCells[r] || !s.canonCells[r][c]) continue;
+          const a = s.canonActive[r + '-' + c];
+          const isCursor = (c === mc);
+          if (a && isCursor) {
+            applyStyle(s.canonCells[r][c], STYLES.TRIG);
+            if (s.step % s.melN === 0) playNote(s.melInstrument, r, a.vol * newV, t);
+          } else if (a && a.vol >= 1) applyStyle(s.canonCells[r][c], STYLES.FULL);
+          else if (a) applyStyle(s.canonCells[r][c], STYLES.HALF);
+          else if (isCursor) applyStyle(s.canonCells[r][c], STYLES.LIT);
+          else applyStyle(s.canonCells[r][c], STYLES.OFF);
+        }
+      }
+    }
   }
 
   s.step++;
@@ -430,6 +485,7 @@ export function resetAll() {
   state.currentPattern = 0;
   for (let i = 0; i < state.patButtons.length; i++)
     state.patButtons[i].className = i === 0 ? 'pat-btn sel' : 'pat-btn';
+  computeCanon();
 }
 
 // ======================== SAVE / LOAD ========================
