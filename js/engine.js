@@ -96,6 +96,27 @@ export function initPatterns(mode) {
       for (let gi = 0; gi < mode.mainGrids.length; gi++) {
         p.grids[gi] = { cells: {}, instrument: mode.mainGrids[gi].defaultInstrument };
       }
+      // Default canone alla quarta melody for pattern 0
+      if (i === 0 && mode.melodyGrids && mode.melodyGrids.length > 0) {
+        const totalCols = mode.melodyGrids.reduce((s, g) => s + g.cols, 0);
+        const rows = mode.melodyGrids[0].rows;
+        const mc = {};
+        // Descending stepwise subject spanning a 4th (4 rows)
+        const subject = [0, 1, 2, 3, 2, 1, 0, 3];
+        const rhythm = [0, 4, 7, 11, 16, 20, 23, 27];
+        for (let j = 0; j < subject.length; j++) {
+          const r = Math.min(subject[j], rows - 1);
+          const c = rhythm[j] % totalCols;
+          mc[r + '-' + c] = 1;
+        }
+        // Answer at the 4th (shifted down 4 rows), offset by 8 steps
+        for (let j = 0; j < subject.length; j++) {
+          const r = Math.min(subject[j] + 4, rows - 1);
+          const c = (rhythm[j] + 8) % totalCols;
+          mc[r + '-' + c] = 0.5;
+        }
+        p.melody.cells = mc;
+      }
       state.patterns[i] = p;
     }
   }
