@@ -424,12 +424,11 @@ export function tick() {
           playNote(g.instrument, r, vol * newV * rhythmBal, t);
           trig[r] = true;
         }
-        // Light travel: lights spawn at cell column on trigger and travel rightward
-        for (let d = 0; d < g.cols - c; d++) {
+        // Light travel: lights spawn at column 0 on trigger and travel rightward
+        for (let d = 0; d < g.cols; d++) {
           const pastIdx = mod(seqIdx - d, mode.seqLen);
           if (mode.colSeqs[c][pastIdx]) {
-            const lightCol = c + d;
-            if (lightCol < g.cols) lit[r][lightCol] = true;
+            if (d < g.cols) lit[r][d] = true;
           }
         }
       } else {
