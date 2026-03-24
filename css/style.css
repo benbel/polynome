@@ -16,21 +16,31 @@ body {
   height: 100%; background: #ccc; width: 0%; transition: width 0.1s;
 }
 
-#main { display: none; flex-direction: column; align-items: center; }
+#main { display: none; flex-direction: row; align-items: flex-start; gap: 16px; padding: 20px; }
 
-/* Mode switcher */
-#mode-bar {
-  display: flex; gap: 8px; margin-bottom: 12px; padding: 8px;
+/* Mode column — far left */
+#mode-col {
+  display: flex; flex-direction: column; gap: 6px; padding-top: 4px;
 }
 .mode-btn {
   font-family: 'Courier New', monospace; font-size: 10px; letter-spacing: 1px;
   text-transform: uppercase; background: transparent; border: 1px solid #e0e0e0;
-  border-radius: 6px; padding: 4px 12px; cursor: pointer; color: #bbb; transition: all 0.15s;
+  border-radius: 6px; padding: 4px 10px; cursor: pointer; color: #bbb; transition: all 0.15s;
+  text-align: left; white-space: nowrap;
 }
 .mode-btn.sel { color: #888; border-color: #bbb; background: rgba(240, 235, 225, 0.6); }
 
-#outer { display: flex; gap: 10px; align-items: flex-start; padding: 20px; }
-#pat-col { display: flex; flex-direction: column; gap: 4px; padding-top: 28px; }
+/* Controls column */
+#ctrl-col {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+  padding-top: 4px;
+  color: #bbb; font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+}
+#ctrl-col span { cursor: pointer; white-space: nowrap; }
+#ctrl-col input[type=range] { width: 60px; }
+
+/* Pattern column */
+#pat-col { display: flex; flex-direction: column; gap: 4px; padding-top: 4px; }
 
 .pat-btn {
   width: 20px; height: 20px; font-family: 'Courier New', monospace; font-size: 9px;
@@ -58,13 +68,6 @@ body {
   border-top: 1px solid #eee; padding-top: 12px;
 }
 #mel-grids { display: flex; gap: 16px; }
-
-#controls {
-  display: flex; align-items: center; gap: 11px; margin-top: 14px;
-  color: #bbb; font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
-  flex-wrap: wrap; justify-content: center;
-}
-#controls span { cursor: pointer; }
 
 input[type=range] {
   -webkit-appearance: none; appearance: none;

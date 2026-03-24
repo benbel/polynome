@@ -282,8 +282,8 @@ function updateCtl() {
   let any = false;
   for (const g of state.grids) if (Object.keys(g.active).length > 0) any = true;
   if (Object.keys(state.melActive).length > 0) any = true;
-  if (state.playing) el.innerHTML = '<span id="stop-btn">&#9632;</span>';
-  else if (any) el.innerHTML = '<span id="play-btn">&#9654;</span>';
+  if (state.playing) el.innerHTML = '<span id="stop-btn">stop</span>';
+  else if (any) el.innerHTML = '<span id="play-btn">play</span>';
   else el.innerHTML = '';
 
   const stopBtn = document.getElementById('stop-btn');
@@ -295,15 +295,15 @@ function updateCtl() {
 // ======================== INIT ========================
 
 export function initApp() {
-  // Mode bar
-  const modeBar = document.getElementById('mode-bar');
+  // Mode column
+  const modeCol = document.getElementById('mode-col');
   for (const id of MODE_IDS) {
     const btn = document.createElement('button');
     btn.className = 'mode-btn';
     btn.textContent = id;
     btn.dataset.mode = id;
     btn.addEventListener('click', () => switchMode(id));
-    modeBar.appendChild(btn);
+    modeCol.appendChild(btn);
   }
 
   // Controls wiring
@@ -336,7 +336,7 @@ export function initApp() {
 
   document.getElementById('cycleToggle').addEventListener('click', () => {
     state.autoCycle = !state.autoCycle;
-    document.getElementById('cycleToggle').textContent = state.autoCycle ? '\u27f3 on' : '\u27f3 off';
+    document.getElementById('cycleToggle').textContent = state.autoCycle ? 'cycle on' : 'cycle off';
   });
 
   document.getElementById('btn-reset').addEventListener('click', () => { resetAll(); updateCtl(); });
@@ -352,9 +352,6 @@ export function initApp() {
     });
   });
 
-  // Click to start — load default mode
-  document.addEventListener('click', function handler() {
-    document.removeEventListener('click', handler);
-    switchMode('texture');
-  }, { once: true });
+  // Auto-start default mode
+  switchMode('texture');
 }

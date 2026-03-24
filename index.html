@@ -7,30 +7,31 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-<div id="loading">click to start</div>
+<div id="loading">loading...</div>
 <div id="progress-bar"><div id="progress-fill"></div></div>
 <div id="main">
-  <div id="mode-bar"></div>
-  <div id="outer">
-    <div id="pat-col"></div>
-    <div id="content">
-      <div id="stage"></div>
-      <div id="mel-wrap">
-        <div class="inst" id="mel-inst-bar"></div>
-        <div id="mel-grids"></div>
-      </div>
-    </div>
-  </div>
-  <div id="controls">
+  <div id="mode-col"></div>
+  <div id="ctrl-col">
     <span id="ctl"></span>
-    <span id="btn-reset">&#10005;</span>
-    <span id="btn-random">&#9860;</span>
-    <span id="btn-save">&#8595;</span>
-    <span id="btn-load">&#8593;</span>
-    <input type="range" id="speed" min="50" max="500" value="200"><span id="bpm"></span>
-    <span id="cycleToggle">&#10227; off</span>
-    <input type="range" id="cycleLen" min="16" max="256" value="64" step="8"><span id="cycleDisp"></span>
-    <span>&times;</span><input type="range" id="melN" min="1" max="8" value="2"><span id="melNDisp"></span>
+    <span id="btn-reset">reset</span>
+    <span id="btn-random">random</span>
+    <span id="btn-save">save</span>
+    <span id="btn-load">load</span>
+    <input type="range" id="speed" min="50" max="500" value="200">
+    <span id="bpm"></span>
+    <span id="cycleToggle">cycle off</span>
+    <input type="range" id="cycleLen" min="16" max="256" value="64" step="8">
+    <span id="cycleDisp"></span>
+    <input type="range" id="melN" min="1" max="8" value="2">
+    <span id="melNDisp"></span>
+  </div>
+  <div id="pat-col"></div>
+  <div id="content">
+    <div id="stage"></div>
+    <div id="mel-wrap">
+      <div class="inst" id="mel-inst-bar"></div>
+      <div id="mel-grids"></div>
+    </div>
   </div>
 </div>
 <script type="module">
