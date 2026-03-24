@@ -43,19 +43,18 @@ export async function switchMode(modeId) {
   progressFill.style.width = '0%';
   main.style.display = 'none';
 
-  // Init audio context
+  // Init audio context (don't await resume — it needs a user gesture)
   if (!state.ctx) {
     state.ctx = new AudioContext();
-    if (state.ctx.state === 'suspended') await state.ctx.resume();
   }
 
-  // Build effects chain
-  buildEffects(mode.effects);
-
-  // Load buffers
+  // Load buffers (decodeAudioData works on suspended contexts)
   state.buffers = await loadMode(modeId, pct => {
     progressFill.style.width = (pct * 100) + '%';
   });
+
+  // Build effects chain
+  buildEffects(mode.effects);
 
   // Restore or init patterns
   if (state.modePatterns[modeId]) {
