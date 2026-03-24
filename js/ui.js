@@ -72,6 +72,15 @@ export async function switchMode(modeId) {
     b.className = b.dataset.mode === modeId ? 'mode-btn sel' : 'mode-btn';
   });
 
+  // Apply mode-specific tempo if set
+  if (mode.defaultStepMs) {
+    state.stepMs = mode.defaultStepMs;
+    const slider = document.getElementById('speed');
+    const bpmEl = document.getElementById('bpm');
+    slider.value = 550 - state.stepMs;
+    bpmEl.textContent = Math.round(60000 / state.stepMs) + ' bpm';
+  }
+
   loading.style.display = 'none';
   progressBar.style.display = 'none';
   main.style.display = 'flex';
