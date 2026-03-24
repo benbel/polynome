@@ -17,6 +17,11 @@ const modeCache = {};
 export async function switchMode(modeId) {
   if (state.playing) stop();
 
+  // Cut all audio immediately (stop reverb/delay tails from previous mode)
+  if (state.masterComp) { state.masterComp.disconnect(); state.masterComp = null; }
+  if (state.reverbInput) { state.reverbInput.disconnect(); state.reverbInput = null; }
+  if (state.delayInput) { state.delayInput.disconnect(); state.delayInput = null; }
+
   // Save current mode patterns
   if (state.mode) {
     const { savePat } = await import('./engine.js');
@@ -102,13 +107,14 @@ function buildUI(mode) {
   state.patButtons = [];
   state.step = 0;
 
-  const cellSize = mode.cellSize || 16;
+  const isSimple = state.simpleGrid && mode.id !== 'original';
+  const cellSize = isSimple ? 28 : (mode.cellSize || 16);
   const hidden = mode.hideControls || [];
 
   // Pattern column
   const patCol = document.getElementById('pat-col');
   patCol.innerHTML = '';
-  patCol.style.display = hidden.includes('pattern') ? 'none' : '';
+  patCol.style.display = (hidden.includes('pattern') || !state.autoCycle) ? 'none' : '';
   const numPat = mode.numPatterns || 8;
   for (let pi = 0; pi < numPat; pi++) {
     const pb = document.createElement('div');
@@ -124,10 +130,16 @@ function buildUI(mode) {
   const stage = document.getElementById('stage');
   stage.innerHTML = '';
   const layoutCols = (mode.mainGridLayout && mode.mainGridLayout.cols) || 2;
-  stage.style.gridTemplateColumns = `repeat(${layoutCols}, auto)`;
 
-  for (let gi = 0; gi < mode.mainGrids.length; gi++) {
-    const def = mode.mainGrids[gi];
+  // In simple mode (non-original), cap grids to 8x16 and reduce to single grid
+  const effectiveMainGrids = isSimple
+    ? [{ rows: 8, cols: 16, defaultInstrument: mode.mainGrids[0].defaultInstrument }]
+    : mode.mainGrids;
+  const effectiveLayoutCols = isSimple ? 1 : layoutCols;
+  stage.style.gridTemplateColumns = `repeat(${effectiveLayoutCols}, auto)`;
+
+  for (let gi = 0; gi < effectiveMainGrids.length; gi++) {
+    const def = effectiveMainGrids[gi];
     const panel = document.createElement('div');
     panel.className = 'panel';
 
@@ -190,7 +202,10 @@ function buildUI(mode) {
   mib.innerHTML = '';
   melGridsDiv.innerHTML = '';
 
-  if (mode.melodyGrids && mode.melodyGrids.length > 0 && !hidden.includes('melody')) {
+  const effectiveMelGrids = isSimple && mode.melodyGrids
+    ? [{ rows: 8, cols: 32 }]
+    : mode.melodyGrids;
+  if (effectiveMelGrids && effectiveMelGrids.length > 0 && !hidden.includes('melody')) {
     melWrap.style.display = '';
     state.melInstrument = mode.melodyDefaultInstrument || (mode.melodyInstruments[0] && mode.melodyInstruments[0].id) || 'pad';
 
@@ -208,17 +223,17 @@ function buildUI(mode) {
       state.melButtons.push(btn);
     }
 
-    const melRows = mode.melodyGrids[0].rows;
+    const melRows = effectiveMelGrids[0].rows;
     for (let r = 0; r < melRows; r++) state.melCells[r] = [];
 
-    for (let mg = 0; mg < mode.melodyGrids.length; mg++) {
-      const mgDef = mode.melodyGrids[mg];
+    for (let mg = 0; mg < effectiveMelGrids.length; mg++) {
+      const mgDef = effectiveMelGrids[mg];
       const gel = document.createElement('div');
       gel.className = 'grid';
       gel.style.gridTemplateColumns = `repeat(${mgDef.cols}, ${cellSize}px)`;
       for (let r = 0; r < mgDef.rows; r++) {
         for (let lc = 0; lc < mgDef.cols; lc++) {
-          const gc = mg > 0 ? mode.melodyGrids.slice(0, mg).reduce((s, g) => s + g.cols, 0) + lc : lc;
+          const gc = mg > 0 ? effectiveMelGrids.slice(0, mg).reduce((s, g) => s + g.cols, 0) + lc : lc;
           const el = document.createElement('div');
           el.className = 'cell';
           el.style.width = cellSize + 'px';
@@ -247,7 +262,7 @@ function buildUI(mode) {
   state.canonCells = [];
   state.canonButtons = [];
 
-  const hasMelody = mode.melodyGrids && mode.melodyGrids.length > 0 && !hidden.includes('melody');
+  const hasMelody = effectiveMelGrids && effectiveMelGrids.length > 0 && !hidden.includes('melody');
   if (hasMelody) {
     // Build canon mode buttons (crab, mirror, table)
     for (const cm of ['simple', 'interval', 'crab', 'mirror', 'table']) {
@@ -266,17 +281,17 @@ function buildUI(mode) {
     }
 
     // Build read-only canon grid (same dimensions as melody)
-    const melRows = mode.melodyGrids[0].rows;
-    for (let r = 0; r < melRows; r++) state.canonCells[r] = [];
+    const canonMelRows = effectiveMelGrids[0].rows;
+    for (let r = 0; r < canonMelRows; r++) state.canonCells[r] = [];
 
-    for (let mg = 0; mg < mode.melodyGrids.length; mg++) {
-      const mgDef = mode.melodyGrids[mg];
+    for (let mg = 0; mg < effectiveMelGrids.length; mg++) {
+      const mgDef = effectiveMelGrids[mg];
       const gel = document.createElement('div');
       gel.className = 'grid';
       gel.style.gridTemplateColumns = `repeat(${mgDef.cols}, ${cellSize}px)`;
       for (let r = 0; r < mgDef.rows; r++) {
         for (let lc = 0; lc < mgDef.cols; lc++) {
-          const gc = mg > 0 ? mode.melodyGrids.slice(0, mg).reduce((s, g) => s + g.cols, 0) + lc : lc;
+          const gc = mg > 0 ? effectiveMelGrids.slice(0, mg).reduce((s, g) => s + g.cols, 0) + lc : lc;
           const el = document.createElement('div');
           el.className = 'cell';
           el.style.width = cellSize + 'px';
@@ -308,6 +323,15 @@ function buildUI(mode) {
 
   const canonToggle = document.getElementById('canonToggle');
   if (canonToggle) canonToggle.style.display = hidden.includes('melody') ? 'none' : '';
+
+  const balEl = document.getElementById('balance');
+  if (balEl) balEl.style.display = hidden.includes('melody') ? 'none' : '';
+  const balDispEl = document.getElementById('balDisp');
+  if (balDispEl) balDispEl.style.display = hidden.includes('melody') ? 'none' : '';
+
+  // Hide grid toggle for original (already 8x16)
+  const gridToggle = document.getElementById('gridToggle');
+  if (gridToggle) gridToggle.style.display = mode.id === 'original' ? 'none' : '';
 }
 
 // ======================== CELL TOGGLES ========================
@@ -315,10 +339,16 @@ function buildUI(mode) {
 function toggleMain(gi, r, c) {
   const g = state.grids[gi];
   const k = r + '-' + c;
+  const simple = state.simpleGrid && state.mode.id !== 'original';
   if (!g.active[k]) {
-    g.active[k] = { offset: state.step - (g.cols - 1), vol: 0.5 };
-    applyStyle(g.cells[r][c], STYLES.HALF);
-  } else if (g.active[k].vol < 1) {
+    if (simple) {
+      g.active[k] = { offset: state.step - (g.cols - 1), vol: 1 };
+      applyStyle(g.cells[r][c], STYLES.FULL);
+    } else {
+      g.active[k] = { offset: state.step - (g.cols - 1), vol: 0.5 };
+      applyStyle(g.cells[r][c], STYLES.HALF);
+    }
+  } else if (!simple && g.active[k].vol < 1) {
     g.active[k].vol = 1;
     applyStyle(g.cells[r][c], STYLES.FULL);
   } else {
@@ -331,10 +361,16 @@ function toggleMain(gi, r, c) {
 
 function toggleMel(r, c) {
   const k = r + '-' + c;
+  const simple = state.simpleGrid && state.mode.id !== 'original';
   if (!state.melActive[k]) {
-    state.melActive[k] = { vol: 0.5 };
-    applyStyle(state.melCells[r][c], STYLES.HALF);
-  } else if (state.melActive[k].vol < 1) {
+    if (simple) {
+      state.melActive[k] = { vol: 1 };
+      applyStyle(state.melCells[r][c], STYLES.FULL);
+    } else {
+      state.melActive[k] = { vol: 0.5 };
+      applyStyle(state.melCells[r][c], STYLES.HALF);
+    }
+  } else if (!simple && state.melActive[k].vol < 1) {
     state.melActive[k].vol = 1;
     applyStyle(state.melCells[r][c], STYLES.FULL);
   } else {
@@ -405,9 +441,37 @@ export function initApp() {
   updateMelN();
   melSlider.addEventListener('input', updateMelN);
 
+  const balSlider = document.getElementById('balance');
+  const balDisp = document.getElementById('balDisp');
+  function updateBal() {
+    state.balance = parseInt(balSlider.value);
+    const ml = Math.round((100 - state.balance) / 100 * 100);
+    balDisp.textContent = `mel${ml}`;
+  }
+  updateBal();
+  balSlider.addEventListener('input', updateBal);
+
+  document.getElementById('gridToggle').addEventListener('click', async () => {
+    state.simpleGrid = !state.simpleGrid;
+    document.getElementById('gridToggle').textContent = state.simpleGrid ? 'simple' : 'complex';
+    // Rebuild UI with current mode
+    if (state.mode) {
+      const wasPlaying = state.playing;
+      if (wasPlaying) stop();
+      buildUI(state.mode);
+      const { loadPat } = await import('./engine.js');
+      loadPat(state.currentPattern);
+      if (wasPlaying) start();
+      updateCtl();
+    }
+  });
+
   document.getElementById('cycleToggle').addEventListener('click', () => {
     state.autoCycle = !state.autoCycle;
     document.getElementById('cycleToggle').textContent = state.autoCycle ? 'cycle on' : 'cycle off';
+    // Hide pattern column when cycle is off (manual selection meaningless)
+    const patCol = document.getElementById('pat-col');
+    if (patCol) patCol.style.display = state.autoCycle ? '' : 'none';
   });
 
   document.getElementById('canonToggle').addEventListener('click', () => {

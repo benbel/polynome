@@ -1,35 +1,45 @@
 """Generate original mode audio assets.
 
-Additive synthesis matching a monome grid video's timbral profile.
-Uses analysis results if available, otherwise sensible defaults.
+Warm, woody, marimba-like tone with natural decay.
+Matches the monome Press Cafe timbral profile.
 """
 
 import os, json
 import numpy as np
 from common import (
-    SR, sine, env_exp_decay, asymmetric_saturate,
-    normalize, fade_in, fade_out, to_stereo,
-    export_ogg, write_manifest, generate_reverb_ir,
+    SR, sine, noise, env_exp_decay, env_adsr,
+    lowpass, highpass, bandpass, comb_filter,
+    asymmetric_saturate, normalize, fade_in, fade_out,
+    to_stereo, mix_stereo, export_ogg, write_manifest, generate_reverb_ir,
 )
 
-# Default scale if no analysis available
-DEFAULT_FREQS = [440, 392, 330, 294, 262, 220, 196, 165]
+DEFAULT_FREQS = [523, 440, 370, 311, 262, 220, 175, 131]
 
-# Brighter, more bell-like tone — joyful, sparkling character
+# Warm, woody tone — marimba-like with body resonance
 DEFAULT_ENVELOPE = {
-    'attack_ms': 2.0,
-    'decay_time': 0.35,
+    'attack_ms': 1.5,
+    'decay_time': 0.6,
     'harmonic_ratios': [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0],
-    'harmonic_amplitudes_db': [0, -5, -10, -14, -18, -22, -30],
-    'inharmonicity_cents': [0, 8, -3, 12, -5, 6, -8],
+    'harmonic_amplitudes_db': [0, -4, -9, -14, -20, -26, -34],
+    'inharmonicity_cents': [0, 6, -2, 10, -4, 5, -7],
 }
 
 
 def gen_tone(freq, env_profile, sr=SR):
-    dur = 0.5
+    dur = 0.9
     n = int(sr * dur)
     t = np.arange(n) / sr
 
+    # --- Mallet attack transient ---
+    # Short noise burst filtered around fundamental for woody thump
+    atk_dur = 0.008
+    atk_n = int(sr * atk_dur)
+    atk = noise(atk_dur, sr)
+    atk = bandpass(atk, max(20, freq * 0.5), min(sr / 2 - 100, freq * 4), sr)
+    atk_env = env_exp_decay(atk_dur, 0.2, 0.003, sr)
+    atk *= atk_env * 0.35
+
+    # --- Tonal body: slightly detuned partials for warmth ---
     sig = np.zeros(n)
     ratios = env_profile['harmonic_ratios']
     amps_db = env_profile['harmonic_amplitudes_db']
@@ -42,22 +52,34 @@ def gen_tone(freq, env_profile, sr=SR):
         amp = 10 ** (amps_db[h] / 20)
         sig += amp * np.sin(2 * np.pi * partial_freq * t)
 
-    # Envelope
+    # --- Body resonance: low-mid bump via comb resonator ---
+    body_exc = np.zeros(n)
+    body_exc[:atk_n] = atk[:min(atk_n, len(atk))]
+    delay = max(1, int(sr / freq))
+    body = comb_filter(body_exc, delay, feedback=0.6, lp_freq=min(freq * 3, sr / 2 - 100), sr=sr)
+    body *= 0.15
+
+    # Combine tonal + body
+    sig = sig + body[:n]
+
+    # Envelope — longer natural decay
     env = env_exp_decay(dur, env_profile['attack_ms'], env_profile['decay_time'], sr)
     sig *= env
 
-    # Very gentle warmth — minimal saturation to keep brightness
-    sig = asymmetric_saturate(sig, drive=1.05, asymmetry=0.02)
+    # Insert attack transient
+    sig[:len(atk)] += atk[:min(len(atk), n)]
+
+    # Gentle warmth — minimal asymmetric saturation
+    sig = asymmetric_saturate(sig, drive=1.08, asymmetry=0.03)
 
     sig = normalize(sig, 0.85)
     fade_in(sig, env_profile['attack_ms'], sr)
-    fade_out(sig, 20, sr)
+    fade_out(sig, 40, sr)
 
     return to_stereo(sig, 0)
 
 
 def generate(out_dir, sr=SR, fmt='ogg'):
-    # Try loading analysis results
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     analysis_dir = os.path.join(root, 'analysis')
 
@@ -82,7 +104,6 @@ def generate(out_dir, sr=SR, fmt='ogg'):
         path = os.path.join(out_dir, f'tone_{i}.{fmt}')
         export_ogg(sig, path, sr)
 
-    # Reverb IR
     ir = generate_reverb_ir(2.0, dark=0.5, sr=sr)
     export_ogg(ir, os.path.join(out_dir, 'reverb_ir.ogg'), sr)
 
