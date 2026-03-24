@@ -589,76 +589,127 @@ export function randomize() {
   if (state.playing) stop();
   state.step = 0;
   const mode = state.mode;
-  const primes = [3, 5, 7, 9, 11, 13, 17, 19];
-  const accent = [4, 6, 8, 12, 16];
 
-  // Generate base pattern in slot 0
+  // maxCol: exclude rightmost column (fires every step)
+  const maxCol = (cols) => cols - 2;
+
+  // ---- Rhythm generation ----
+  // Build layered rhythmic patterns: anchor rows get strong periodic pulses,
+  // fill rows get syncopated offbeats, ghost rows get sparse accents.
   for (let gi = 0; gi < state.grids.length; gi++) {
     const g = state.grids[gi];
     const rows = g.rows, cols = g.cols;
+    const mc = maxCol(cols);
     const cells = {};
-    // Fill 15-40% of cells using rhythmic intervals
-    const density = 0.15 + Math.random() * 0.25;
-    const targetCells = Math.round(rows * cols * density);
-    // Pick a few active rows with varying densities
-    const activeRows = shuffle([...Array(rows).keys()]).slice(0, randInt(3, Math.min(rows, 6)));
-    let placed = 0;
-    for (const row of activeRows) {
-      const interval = pick(primes.filter(x => x <= cols));
-      const offset = randInt(0, interval - 1);
-      for (let c = offset; c < cols; c += interval) {
-        if (placed < targetCells) {
-          cells[row + '-' + c] = Math.random() > 0.3 ? 1 : 0.5;
-          placed++;
-        }
-      }
-      // Scatter a few extra hits on this row
-      const extras = randInt(0, 3);
-      for (let e = 0; e < extras && placed < targetCells; e++) {
-        const c = randInt(0, cols - 1);
-        cells[row + '-' + c] = Math.random() > 0.5 ? 1 : 0.5;
-        placed++;
+
+    // Divide rows into roles
+    const allRows = shuffle([...Array(rows).keys()]);
+    const nAnchor = randInt(1, 2);
+    const nFill = randInt(1, 3);
+    const nGhost = randInt(0, 2);
+    const anchorRows = allRows.slice(0, nAnchor);
+    const fillRows = allRows.slice(nAnchor, nAnchor + nFill);
+    const ghostRows = allRows.slice(nAnchor + nFill, nAnchor + nFill + nGhost);
+
+    // Anchor: strong downbeats at regular intervals (2, 4, or 8)
+    for (const row of anchorRows) {
+      const interval = pick([2, 4, 8]);
+      const offset = Math.random() < 0.7 ? 0 : randInt(0, interval - 1);
+      for (let c = offset; c <= mc; c += interval) {
+        cells[row + '-' + c] = 1;
       }
     }
+
+    // Fill: syncopated — offset from anchors using odd subdivisions
+    for (const row of fillRows) {
+      const interval = pick([3, 5, 6, 7]);
+      const offset = randInt(0, interval - 1);
+      for (let c = offset; c <= mc; c += interval) {
+        cells[row + '-' + c] = Math.random() > 0.4 ? 1 : 0.5;
+      }
+      // Occasional extra hit for swing
+      if (Math.random() > 0.5) {
+        const c = randInt(0, mc);
+        cells[row + '-' + c] = 0.5;
+      }
+    }
+
+    // Ghost: sparse accents — only 1-3 hits per row
+    for (const row of ghostRows) {
+      const nHits = randInt(1, 3);
+      for (let h = 0; h < nHits; h++) {
+        cells[row + '-' + randInt(0, mc)] = 0.5;
+      }
+    }
+
     state.patterns[0].grids[gi] = { cells, instrument: pick(mode.mainInstruments).id };
   }
 
-  // Generate melody seed
+  // ---- Melody generation ----
+  // Generate an actual melody: a single voice walking stepwise with occasional
+  // leaps, creating a contour (arch, descent, zigzag, etc.)
   if (mode.melodyGrids) {
     const totalCols = mode.melodyGrids.reduce((s, g) => s + g.cols, 0);
     const melRows = mode.melodyGrids[0].rows;
     const mc = {};
-    const nV = randInt(3, Math.min(melRows, 6));
-    const activeRows = shuffle([...Array(melRows).keys()]).slice(0, nV);
-    for (const row of activeRows) {
-      const interval = pick(primes.filter(x => x <= totalCols));
-      const offset = randInt(0, interval - 1);
-      for (let c = offset; c < totalCols; c += interval) {
-        mc[row + '-' + c] = Math.random() > 0.3 ? 1 : 0.5;
+
+    // Choose a melodic contour strategy
+    const contour = pick(['arch', 'descent', 'ascent', 'wave', 'zigzag']);
+    // Melody length: 8-16 notes spread across the columns
+    const noteCount = randInt(8, Math.min(16, totalCols));
+    // Spacing: how many columns between notes (melody breathes)
+    const spacing = Math.max(1, Math.floor(totalCols / noteCount));
+
+    // Start pitch in the middle-ish range
+    let pitch = randInt(Math.floor(melRows * 0.25), Math.floor(melRows * 0.65));
+    const clamp = (v) => Math.max(0, Math.min(melRows - 1, v));
+
+    for (let n = 0; n < noteCount; n++) {
+      const col = n * spacing;
+      if (col >= totalCols) break;
+
+      mc[pitch + '-' + col] = n === 0 || (n % 4 === 0) ? 1 : 0.5;
+
+      // Determine next pitch based on contour
+      let step;
+      const progress = n / noteCount;
+      if (contour === 'arch') {
+        // rise then fall
+        step = progress < 0.5 ? pick([-2, -1, -1, 0]) : pick([0, 1, 1, 2]);
+      } else if (contour === 'descent') {
+        step = pick([0, 1, 1, 1, 2]);
+      } else if (contour === 'ascent') {
+        step = pick([-2, -1, -1, -1, 0]);
+      } else if (contour === 'wave') {
+        step = Math.sin(progress * Math.PI * 2) > 0 ? pick([-1, -1, 0]) : pick([0, 1, 1]);
+      } else {
+        // zigzag: alternate direction every 2-3 notes
+        step = (Math.floor(n / randInt(2, 3)) % 2 === 0) ? pick([-1, -1, -2]) : pick([1, 1, 2]);
       }
-      const extras = randInt(0, 2);
-      for (let e = 0; e < extras; e++) {
-        mc[row + '-' + randInt(0, totalCols - 1)] = Math.random() > 0.5 ? 1 : 0.5;
-      }
+
+      // Occasional leap (10% chance)
+      if (Math.random() < 0.1) step = pick([-3, -4, 3, 4]);
+
+      pitch = clamp(pitch + step);
     }
+
     state.patterns[0].melody = { cells: mc, instrument: pick(mode.melodyInstruments || []).id || mode.melodyDefaultInstrument };
   }
 
-  // Mutate into other pattern slots — each progressively more different
+  // ---- Mutate into other pattern slots ----
   for (let pi = 1; pi < state.patterns.length; pi++) {
     for (let gi = 0; gi < state.grids.length; gi++) {
       const base = state.patterns[0].grids[gi];
       const g = state.grids[gi];
+      const mc = maxCol(g.cols);
       const cells = { ...base.cells };
       const mutations = randInt(2, 5 + pi);
       for (let m = 0; m < mutations; m++) {
         if (Math.random() > 0.4) {
-          // Add a cell
           const r = randInt(0, g.rows - 1);
-          const c = randInt(0, g.cols - 1);
+          const c = randInt(0, mc);
           cells[r + '-' + c] = Math.random() > 0.5 ? 1 : 0.5;
         } else {
-          // Remove a cell
           const k = Object.keys(cells);
           if (k.length > 0) delete cells[pick(k)];
         }
@@ -667,19 +718,30 @@ export function randomize() {
     }
     if (mode.melodyGrids) {
       const baseMel = state.patterns[0].melody;
-      const mc = { ...baseMel.cells };
+      const melCells = { ...baseMel.cells };
       const totalCols = mode.melodyGrids.reduce((s, g) => s + g.cols, 0);
       const melRows = mode.melodyGrids[0].rows;
+      // Melody mutations: shift existing notes by small pitch intervals
       const mutations = randInt(1, 3 + pi);
       for (let m = 0; m < mutations; m++) {
-        if (Math.random() > 0.4) {
-          mc[randInt(0, melRows - 1) + '-' + randInt(0, totalCols - 1)] = Math.random() > 0.5 ? 1 : 0.5;
+        const keys = Object.keys(melCells);
+        if (keys.length === 0) break;
+        if (Math.random() > 0.3) {
+          // Shift a note up or down by 1-2 rows
+          const k = pick(keys);
+          const [rs, cs] = k.split('-');
+          const nr = Math.max(0, Math.min(melRows - 1, parseInt(rs) + pick([-2, -1, 1, 2])));
+          const nk = nr + '-' + cs;
+          if (!melCells[nk]) {
+            const vol = melCells[k];
+            delete melCells[k];
+            melCells[nk] = vol;
+          }
         } else {
-          const k = Object.keys(mc);
-          if (k.length > 0) delete mc[pick(k)];
+          delete melCells[pick(keys)];
         }
       }
-      state.patterns[pi].melody = { cells: mc, instrument: baseMel.instrument };
+      state.patterns[pi].melody = { cells: melCells, instrument: baseMel.instrument };
     }
   }
 
