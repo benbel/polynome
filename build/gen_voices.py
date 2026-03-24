@@ -19,7 +19,7 @@ MEL_FREQS = [523, 440, 392, 330, 262, 220, 196, 165]
 
 DURATIONS = {
     'throat': 3.0, 'overtone': 3.0, 'breath': 2.5, 'belt': 2.5, 'hum': 3.0,
-    'aah': 3.5, 'ooh': 3.5, 'mmm': 3.5,
+    'aah': 1.2, 'ooh': 1.2, 'mmm': 1.2,
 }
 
 # Formant tables: (freq, bandwidth, gain_db) — based on vocal acoustics research
@@ -230,65 +230,52 @@ def gen_hum(freq, sr=SR):
 
 
 def gen_aah(freq, sr=SR):
-    """Open 'aah' vowel — choral ensemble with gentle detuning."""
+    """Open 'aah' vowel — clean, clear single voice with gentle onset."""
     dur = DURATIONS['aah']
     n = int(sr * dur)
 
-    def make_voice(f, sr):
-        source = glottal_pulse(f, dur, sr, open_quotient=0.6)
-        sig = formant_filter(source, FORMANTS['a'])
-        return sig[:n]
+    source = glottal_pulse(freq, dur, sr, open_quotient=0.6)
+    sig = formant_filter(source, FORMANTS['a'])
+    sig = sig[:n]
+    sig = add_vibrato(sig, freq, rate=5, depth_cents=12, sr=sr)
+    sig = add_breathiness(sig, 0.02, sr)
+    env = env_adsr(dur, 0.05, 0.15, 0.65, 0.3, sr)
+    sig *= env[:len(sig)]
 
-    result = ensemble_detune(make_voice, freq, n_voices=3, spread_cents=6, pan_spread=0.5, sr=sr)
-    mono = (result[:, 0] + result[:, 1]) / 2
-    mono = add_vibrato(mono, freq, rate=5, depth_cents=25, sr=sr)
-    mono = add_breathiness(mono, 0.06, sr)
-    env = env_adsr(dur, 0.35, 0.25, 0.7, 0.9, sr)
-    mono *= env[:len(mono)]
-
-    return normalize(to_stereo(mono, 0), 0.85)
+    return normalize(to_stereo(sig, 0), 0.85)
 
 
 def gen_ooh(freq, sr=SR):
-    """Round 'ooh' vowel — warm choral ensemble."""
+    """Round 'ooh' vowel — warm, focused."""
     dur = DURATIONS['ooh']
     n = int(sr * dur)
 
-    def make_voice(f, sr):
-        source = glottal_pulse(f, dur, sr, open_quotient=0.55)
-        sig = formant_filter(source, FORMANTS['u'])
-        return sig[:n]
+    source = glottal_pulse(freq, dur, sr, open_quotient=0.55)
+    sig = formant_filter(source, FORMANTS['u'])
+    sig = sig[:n]
+    sig = add_vibrato(sig, freq, rate=5, depth_cents=10, sr=sr)
+    sig = add_breathiness(sig, 0.02, sr)
+    env = env_adsr(dur, 0.05, 0.15, 0.65, 0.3, sr)
+    sig *= env[:len(sig)]
 
-    result = ensemble_detune(make_voice, freq, n_voices=3, spread_cents=6, pan_spread=0.5, sr=sr)
-    mono = (result[:, 0] + result[:, 1]) / 2
-    mono = add_vibrato(mono, freq, rate=5, depth_cents=22, sr=sr)
-    mono = add_breathiness(mono, 0.05, sr)
-    env = env_adsr(dur, 0.35, 0.25, 0.7, 0.9, sr)
-    mono *= env[:len(mono)]
-
-    return normalize(to_stereo(mono, 0), 0.85)
+    return normalize(to_stereo(sig, 0), 0.85)
 
 
 def gen_mmm(freq, sr=SR):
-    """Closed 'mmm' — gentle humming choir."""
+    """Closed 'mmm' — gentle hum, clean."""
     dur = DURATIONS['mmm']
     n = int(sr * dur)
 
-    def make_voice(f, sr):
-        source = glottal_pulse(f, dur, sr, open_quotient=0.5)
-        sig = lowpass(source, 500, sr)
-        nasal = bandpass(source, 230, 330, sr) * 0.25
-        sig = sig[:n] + nasal[:n]
-        return sig[:n]
+    source = glottal_pulse(freq, dur, sr, open_quotient=0.5)
+    sig = lowpass(source, 500, sr)
+    nasal = bandpass(source, 230, 330, sr) * 0.25
+    sig = sig[:n] + nasal[:n]
+    sig = sig[:n]
+    sig = add_vibrato(sig, freq, rate=4.5, depth_cents=10, sr=sr)
+    env = env_adsr(dur, 0.05, 0.15, 0.7, 0.3, sr)
+    sig *= env[:len(sig)]
 
-    result = ensemble_detune(make_voice, freq, n_voices=3, spread_cents=5, pan_spread=0.4, sr=sr)
-    mono = (result[:, 0] + result[:, 1]) / 2
-    mono = add_vibrato(mono, freq, rate=4.5, depth_cents=18, sr=sr)
-    mono = add_breathiness(mono, 0.03, sr)
-    env = env_adsr(dur, 0.35, 0.25, 0.8, 0.9, sr)
-    mono *= env[:len(mono)]
-
-    return normalize(to_stereo(mono, 0), 0.85)
+    return normalize(to_stereo(sig, 0), 0.85)
 
 
 INSTRUMENTS = {
@@ -304,9 +291,9 @@ FX_CONFIG = {
     'breath': {'delay': 0.20, 'reverb': 0.45, 'gain': 0.16},
     'belt': {'delay': 0.10, 'reverb': 0.25, 'gain': 0.26},
     'hum': {'delay': 0.15, 'reverb': 0.30, 'gain': 0.22},
-    'aah': {'delay': 0.18, 'reverb': 0.40, 'gain': 0.18},
-    'ooh': {'delay': 0.20, 'reverb': 0.42, 'gain': 0.16},
-    'mmm': {'delay': 0.18, 'reverb': 0.35, 'gain': 0.20},
+    'aah': {'delay': 0.08, 'reverb': 0.15, 'gain': 0.24},
+    'ooh': {'delay': 0.08, 'reverb': 0.15, 'gain': 0.22},
+    'mmm': {'delay': 0.06, 'reverb': 0.12, 'gain': 0.24},
 }
 
 

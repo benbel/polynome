@@ -38,9 +38,9 @@ export default {
     breath: { delay: 0.20, reverb: 0.40, gain: 0.18 },
     belt: { delay: 0.08, reverb: 0.15, gain: 0.30 },
     hum: { delay: 0.12, reverb: 0.25, gain: 0.26 },
-    aah: { delay: 0.18, reverb: 0.35, gain: 0.20 },
-    ooh: { delay: 0.20, reverb: 0.38, gain: 0.18 },
-    mmm: { delay: 0.15, reverb: 0.30, gain: 0.22 },
+    aah: { delay: 0.08, reverb: 0.15, gain: 0.24 },
+    ooh: { delay: 0.08, reverb: 0.15, gain: 0.22 },
+    mmm: { delay: 0.06, reverb: 0.12, gain: 0.24 },
   },
 
   effects: {
