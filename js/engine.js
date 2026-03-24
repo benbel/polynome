@@ -96,23 +96,25 @@ export function initPatterns(mode) {
       for (let gi = 0; gi < mode.mainGrids.length; gi++) {
         p.grids[gi] = { cells: {}, instrument: mode.mainGrids[gi].defaultInstrument };
       }
-      // Default canone alla quarta melody for pattern 0
+      // Default melody: Goldberg Variation 12 — Canone alla Quarta (BWV 988)
+      // Simplified to 8-row grid. Dux enters, comes enters a 4th below offset.
       if (i === 0 && mode.melodyGrids && mode.melodyGrids.length > 0) {
         const totalCols = mode.melodyGrids.reduce((s, g) => s + g.cols, 0);
         const rows = mode.melodyGrids[0].rows;
         const mc = {};
-        // Descending stepwise subject spanning a 4th (4 rows)
-        const subject = [0, 1, 2, 3, 2, 1, 0, 3];
-        const rhythm = [0, 4, 7, 11, 16, 20, 23, 27];
-        for (let j = 0; j < subject.length; j++) {
-          const r = Math.min(subject[j], rows - 1);
-          const c = rhythm[j] % totalCols;
+        // Dux — opening subject of Variation 12 (descending turn, ascending leap, stepwise descent)
+        // Row 0=highest pitch, row 7=lowest. Mapped to nearest scale degrees.
+        const dux =    [1, 2, 3, 2, 1, 0, 1, 2, 0, 1, 2, 3, 4, 3, 2, 1];
+        const duxCol = [0, 2, 4, 6, 8,10,12,14,18,20,22,24,28,30,32,34];
+        for (let j = 0; j < dux.length; j++) {
+          const r = Math.min(dux[j], rows - 1);
+          const c = duxCol[j] % totalCols;
           mc[r + '-' + c] = 1;
         }
-        // Answer at the 4th (shifted down 4 rows), offset by 8 steps
-        for (let j = 0; j < subject.length; j++) {
-          const r = Math.min(subject[j] + 4, rows - 1);
-          const c = (rhythm[j] + 8) % totalCols;
+        // Comes — a 4th below (4 rows down), entering 8 steps later
+        for (let j = 0; j < dux.length; j++) {
+          const r = Math.min(dux[j] + 4, rows - 1);
+          const c = (duxCol[j] + 8) % totalCols;
           mc[r + '-' + c] = 0.5;
         }
         p.melody.cells = mc;
