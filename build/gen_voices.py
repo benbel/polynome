@@ -90,7 +90,7 @@ def add_vibrato(sig, f0, rate=5.0, depth_cents=30, sr=SR):
 def add_breathiness(sig, amount=0.06, sr=SR):
     """Mix gentle filtered noise for breathiness."""
     n = len(sig)
-    breath = noise(n / sr, sr)
+    breath = np.random.uniform(-1, 1, n)
     breath = bandpass(breath, 800, min(5000, sr / 2 - 100), sr) * amount
     return sig + breath[:n]
 
