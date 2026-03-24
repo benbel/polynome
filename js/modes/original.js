@@ -46,6 +46,8 @@ const p3 = pat({ '0-0': V, '1-2': 1, '5-5': V, '7-7': V });
 const p4 = pat({ '0-0': V, '2-3': 1, '4-6': V, '6-7': V, '7-5': V });
 const p5 = pat({ '1-2': 1, '3-4': 1, '5-6': V, '7-7': V });
 const p6 = pat({ '0-0': V, '2-3': 1, '4-4': 1, '6-5': V, '7-7': V });
+const p7 = pat({ '1-0': V, '3-3': 1, '5-5': V, '6-2': 1, '7-6': V });
+const p8 = pat({ '0-1': V, '2-4': 1, '4-7': V, '5-3': 1, '7-0': V });
 
 export default {
   id: 'original',
@@ -83,11 +85,11 @@ export default {
   // Wide range: C5 down to C3 (~2 octaves)
   mainFreqs: [523, 440, 370, 311, 262, 220, 175, 131],
   defaultStepMs: 450,
-  numPatterns: 6,
+  numPatterns: 8,
   cellSize: 28,
   seqLen: SEQ_LEN,
   colSeqs: COL_SEQS,
   stepVels: STEP_VELS,
   hideControls: ['melody'],
-  defaultPatterns: [p1, p2, p3, p4, p5, p6],
+  defaultPatterns: [p1, p2, p3, p4, p5, p6, p7, p8],
 };
