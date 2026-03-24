@@ -499,21 +499,18 @@ export function initApp() {
   switchMode('original').then(() => preloadAllModes());
 }
 
-// Preload all mode configs and audio buffers in the background
-async function preloadAllModes() {
-  for (const id of MODE_IDS) {
-    // Load mode config
-    if (!modeCache[id]) {
-      try {
+// Preload all mode configs and audio buffers in parallel
+function preloadAllModes() {
+  const tasks = MODE_IDS.map(async (id) => {
+    try {
+      if (!modeCache[id]) {
         const mod = await import(`./modes/${id}.js`);
         modeCache[id] = mod.default;
-      } catch (e) { /* ignore */ }
-    }
-    // Load audio buffers
-    if (!bufferCache[id]) {
-      try {
+      }
+      if (!bufferCache[id]) {
         bufferCache[id] = await loadMode(id, () => {});
-      } catch (e) { /* ignore */ }
-    }
-  }
+      }
+    } catch (e) { /* ignore */ }
+  });
+  return Promise.all(tasks);
 }
