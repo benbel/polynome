@@ -447,7 +447,7 @@ export function tick() {
       for (let c = 0; c < g.cols; c++) {
         const a = g.active[r + '-' + c];
         const isL = !!lit[r][c];
-        const isT = trig[r] && isL && (!useSeq || c === g.cols - 1);
+        const isT = trig[r] && isL && c === g.cols - 1;
         if (isT) applyStyle(g.cells[r][c], STYLES.TRIG);
         else if (a && a.vol >= 1) applyStyle(g.cells[r][c], STYLES.FULL);
         else if (a) applyStyle(g.cells[r][c], STYLES.HALF);
