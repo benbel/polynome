@@ -35,7 +35,7 @@ export default {
   },
 
   mainFreqs: [440, 392, 330, 294, 262, 220, 196, 165],
-  numPatterns: 1,
+  numPatterns: 8,
   cellSize: 28,
-  hideControls: ['melody', 'cycle', 'pattern'],
+  hideControls: ['melody', 'cycle'],
 };

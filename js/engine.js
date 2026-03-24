@@ -505,11 +505,28 @@ export function randomize() {
     const g = state.grids[gi];
     const rows = g.rows, cols = g.cols;
     const cells = {};
-    const nA = randInt(1, 3);
-    const rowPool = shuffle([...Array(rows).keys()]);
-    for (let i = 0; i < nA; i++) {
-      const p = pick(primes.filter(x => x <= cols));
-      cells[rowPool[i] + '-' + (cols - p)] = Math.random() > 0.4 ? 1 : 0.5;
+    // Fill 15-40% of cells using rhythmic intervals
+    const density = 0.15 + Math.random() * 0.25;
+    const targetCells = Math.round(rows * cols * density);
+    // Pick a few active rows with varying densities
+    const activeRows = shuffle([...Array(rows).keys()]).slice(0, randInt(3, Math.min(rows, 6)));
+    let placed = 0;
+    for (const row of activeRows) {
+      const interval = pick(primes.filter(x => x <= cols));
+      const offset = randInt(0, interval - 1);
+      for (let c = offset; c < cols; c += interval) {
+        if (placed < targetCells) {
+          cells[row + '-' + c] = Math.random() > 0.3 ? 1 : 0.5;
+          placed++;
+        }
+      }
+      // Scatter a few extra hits on this row
+      const extras = randInt(0, 3);
+      for (let e = 0; e < extras && placed < targetCells; e++) {
+        const c = randInt(0, cols - 1);
+        cells[row + '-' + c] = Math.random() > 0.5 ? 1 : 0.5;
+        placed++;
+      }
     }
     state.patterns[0].grids[gi] = { cells, instrument: pick(mode.mainInstruments).id };
   }
@@ -519,32 +536,59 @@ export function randomize() {
     const totalCols = mode.melodyGrids.reduce((s, g) => s + g.cols, 0);
     const melRows = mode.melodyGrids[0].rows;
     const mc = {};
-    const nV = randInt(2, 4);
-    const rw = shuffle([...Array(melRows).keys()]).slice(0, nV);
-    const pr = shuffle(primes).slice(0, nV);
-    for (let i = 0; i < nV; i++) {
-      if (pr[i] <= totalCols) mc[rw[i] + '-' + (totalCols - pr[i])] = Math.random() > 0.4 ? 1 : 0.5;
+    const nV = randInt(3, Math.min(melRows, 6));
+    const activeRows = shuffle([...Array(melRows).keys()]).slice(0, nV);
+    for (const row of activeRows) {
+      const interval = pick(primes.filter(x => x <= totalCols));
+      const offset = randInt(0, interval - 1);
+      for (let c = offset; c < totalCols; c += interval) {
+        mc[row + '-' + c] = Math.random() > 0.3 ? 1 : 0.5;
+      }
+      const extras = randInt(0, 2);
+      for (let e = 0; e < extras; e++) {
+        mc[row + '-' + randInt(0, totalCols - 1)] = Math.random() > 0.5 ? 1 : 0.5;
+      }
     }
     state.patterns[0].melody = { cells: mc, instrument: pick(mode.melodyInstruments || []).id || mode.melodyDefaultInstrument };
   }
 
-  // Mutate into other pattern slots
+  // Mutate into other pattern slots — each progressively more different
   for (let pi = 1; pi < state.patterns.length; pi++) {
     for (let gi = 0; gi < state.grids.length; gi++) {
       const base = state.patterns[0].grids[gi];
-      const cells = { ...base.cells };
-      // Random mutations
-      if (Math.random() > 0.5) {
-        const k = Object.keys(cells);
-        if (k.length > 0) delete cells[pick(k)];
-      }
       const g = state.grids[gi];
-      const p = pick(primes.filter(x => x <= g.cols));
-      const r = randInt(0, g.rows - 1);
-      cells[r + '-' + (g.cols - p)] = Math.random() > 0.5 ? 1 : 0.5;
+      const cells = { ...base.cells };
+      const mutations = randInt(2, 5 + pi);
+      for (let m = 0; m < mutations; m++) {
+        if (Math.random() > 0.4) {
+          // Add a cell
+          const r = randInt(0, g.rows - 1);
+          const c = randInt(0, g.cols - 1);
+          cells[r + '-' + c] = Math.random() > 0.5 ? 1 : 0.5;
+        } else {
+          // Remove a cell
+          const k = Object.keys(cells);
+          if (k.length > 0) delete cells[pick(k)];
+        }
+      }
       state.patterns[pi].grids[gi] = { cells, instrument: base.instrument };
     }
-    state.patterns[pi].melody = { ...state.patterns[0].melody, cells: { ...state.patterns[0].melody.cells } };
+    if (mode.melodyGrids) {
+      const baseMel = state.patterns[0].melody;
+      const mc = { ...baseMel.cells };
+      const totalCols = mode.melodyGrids.reduce((s, g) => s + g.cols, 0);
+      const melRows = mode.melodyGrids[0].rows;
+      const mutations = randInt(1, 3 + pi);
+      for (let m = 0; m < mutations; m++) {
+        if (Math.random() > 0.4) {
+          mc[randInt(0, melRows - 1) + '-' + randInt(0, totalCols - 1)] = Math.random() > 0.5 ? 1 : 0.5;
+        } else {
+          const k = Object.keys(mc);
+          if (k.length > 0) delete mc[pick(k)];
+        }
+      }
+      state.patterns[pi].melody = { cells: mc, instrument: baseMel.instrument };
+    }
   }
 
   state.currentPattern = 0;
