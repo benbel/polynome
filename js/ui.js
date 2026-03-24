@@ -340,12 +340,13 @@ function toggleMain(gi, r, c) {
   const g = state.grids[gi];
   const k = r + '-' + c;
   const simple = state.simpleGrid && state.mode.id !== 'original';
+  const off = state.mode.colSeqs ? 0 : state.step - (g.cols - 1);
   if (!g.active[k]) {
     if (simple) {
-      g.active[k] = { offset: state.step - (g.cols - 1), vol: 1 };
+      g.active[k] = { offset: off, vol: 1 };
       applyStyle(g.cells[r][c], STYLES.FULL);
     } else {
-      g.active[k] = { offset: state.step - (g.cols - 1), vol: 0.5 };
+      g.active[k] = { offset: off, vol: 0.5 };
       applyStyle(g.cells[r][c], STYLES.HALF);
     }
   } else if (!simple && g.active[k].vol < 1) {
