@@ -89,11 +89,11 @@ export default {
     compRatio: 4,
   },
 
-  // MIDI 60,59,57,55,53,52,50,48 → C4 down to C3
-  mainFreqs: [261.6, 246.9, 220.0, 196.0, 174.6, 164.8, 146.8, 130.8],
+  // Wide range: C5 down to C3 (~2 octaves)
+  mainFreqs: [523, 440, 370, 311, 262, 220, 175, 131],
   defaultStepMs: 450,
   numPatterns: 6,
   cellSize: 28,
-  hideControls: ['melody', 'cycle'],
+  hideControls: ['melody'],
   defaultPatterns: [p1, p2, p3, p4, p5, p6],
 };

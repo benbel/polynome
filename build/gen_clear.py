@@ -14,8 +14,8 @@ from common import (
     export_ogg, write_manifest, generate_reverb_ir,
 )
 
-FREQS = [262, 220, 196, 165, 131, 110, 98, 82, 73, 65, 55, 49, 41, 33, 27, 21]
-MEL_FREQS = [523, 440, 392, 330, 262, 220, 196, 165]
+FREQS = [523, 440, 370, 311, 262, 220, 175, 147, 123, 104, 82, 65, 55, 44, 33, 25]
+MEL_FREQS = [659, 523, 440, 349, 262, 220, 175, 131]
 
 DURATIONS = {
     'moog_bass': 2.5, 'moog_lead': 2.0, 'string_machine': 3.0,
@@ -37,7 +37,7 @@ def gen_moog_bass(freq, sr=SR):
     cutoff[:env_n] = np.linspace(800, 80, env_n)
     cutoff[env_n:] = 80
 
-    sig = moog_ladder(sig, cutoff, resonance=2.5, sr=sr)
+    sig = moog_ladder(sig, cutoff, resonance=1.2, sr=sr)
 
     # Sub sine one octave down
     sub = sine(f * 0.5, dur, sr) * 0.3
@@ -67,7 +67,7 @@ def gen_moog_lead(freq, sr=SR):
     cutoff = np.full(n, f * 3)
     env_n = int(sr * 0.1)
     cutoff[:env_n] = np.linspace(f * 8, f * 3, env_n)
-    sig = moog_ladder(sig, cutoff, resonance=1.5, sr=sr)
+    sig = moog_ladder(sig, cutoff, resonance=0.8, sr=sr)
 
     env = env_exp_decay(dur, 3, 0.3, sr)
     sig *= env

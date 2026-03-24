@@ -7,7 +7,7 @@ body {
 }
 
 #loading {
-  color: #999; font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+  color: #777; font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
 }
 #progress-bar {
   width: 200px; height: 2px; background: #ddd; margin-top: 8px; display: none;
@@ -34,9 +34,9 @@ body {
   display: flex; flex-direction: column; gap: 6px;
 }
 .mode-btn {
-  font-family: 'Courier New', monospace; font-size: 10px; letter-spacing: 1px;
+  font-family: 'Courier New', monospace; font-size: 11px; letter-spacing: 1px;
   text-transform: uppercase; background: transparent; border: 1px solid #ccc;
-  border-radius: 6px; padding: 4px 10px; cursor: pointer; color: #999; transition: all 0.15s;
+  border-radius: 6px; padding: 4px 10px; cursor: pointer; color: #777; transition: all 0.15s;
   text-align: center; white-space: nowrap;
 }
 .mode-btn.sel { color: #333; border-color: #999; background: rgba(240, 235, 225, 0.6); }
@@ -45,7 +45,7 @@ body {
 #ctrl-col {
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   min-width: 60px;
-  color: #999; font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+  color: #666; font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
 }
 #ctrl-col span { cursor: pointer; white-space: nowrap; }
 #ctrl-col input[type=range] { width: 60px; }
@@ -54,9 +54,9 @@ body {
 #pat-col { display: flex; flex-direction: column; gap: 4px; }
 
 .pat-btn {
-  width: 20px; height: 20px; font-family: 'Courier New', monospace; font-size: 9px;
+  width: 22px; height: 22px; font-family: 'Courier New', monospace; font-size: 10px;
   background: transparent; border: 1px solid #ccc; border-radius: 4px;
-  cursor: pointer; color: #999; text-align: center; line-height: 20px; transition: all 0.15s;
+  cursor: pointer; color: #777; text-align: center; line-height: 22px; transition: all 0.15s;
 }
 .pat-btn.sel { color: #333; border-color: #999; background: rgba(255, 225, 180, 0.5); }
 
@@ -71,9 +71,9 @@ body {
 
 .inst { margin-bottom: 6px; display: flex; gap: 5px; flex-wrap: wrap; justify-content: center; }
 .inst button {
-  font-family: 'Courier New', monospace; font-size: 9px; letter-spacing: 1px;
+  font-family: 'Courier New', monospace; font-size: 10px; letter-spacing: 1px;
   text-transform: uppercase; background: transparent; border: 1px solid #ccc;
-  border-radius: 6px; padding: 3px 8px; cursor: pointer; color: #999; transition: all 0.1s;
+  border-radius: 6px; padding: 3px 8px; cursor: pointer; color: #777; transition: all 0.1s;
 }
 .inst button.sel { color: #333; border-color: #999; background: rgba(240, 235, 225, 0.6); }
 

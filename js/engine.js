@@ -49,19 +49,37 @@ export const state = {
   oldInsts: [],
   oldMelActive: {},
   oldMelInst: 'pad',
+  balance: 50,       // 0 = all melody, 100 = all rhythm, 50 = equal
+  simpleGrid: true,  // true = 8x16, false = full complex grids
   mode: null,        // current mode config
   modePatterns: {},   // per-mode pattern storage
 };
+
+// ======================== EFFECTIVE GRIDS ========================
+// In simple mode, cap grids to smaller dimensions
+function melGrids() {
+  const mode = state.mode;
+  if (!mode || !mode.melodyGrids) return null;
+  if (state.simpleGrid && mode.id !== 'original') return [{ rows: 8, cols: 32 }];
+  return mode.melodyGrids;
+}
+function mainGridsDef() {
+  const mode = state.mode;
+  if (!mode) return [];
+  if (state.simpleGrid && mode.id !== 'original')
+    return [{ rows: 8, cols: 16, defaultInstrument: mode.mainGrids[0].defaultInstrument }];
+  return mode.mainGrids;
+}
 
 // ======================== CANON ========================
 
 export function computeCanon() {
   const s = state;
   const mode = s.mode;
-  if (!mode || !mode.melodyGrids || !s.canonEnabled) { s.canonActive = {}; return; }
+  if (!mode || !melGrids() || !s.canonEnabled) { s.canonActive = {}; return; }
 
-  const totalCols = mode.melodyGrids.reduce((sum, g) => sum + g.cols, 0);
-  const melRows = mode.melodyGrids[0].rows;
+  const totalCols = melGrids().reduce((sum, g) => sum + g.cols, 0);
+  const melRows = melGrids()[0].rows;
   const result = {};
 
   for (const k of Object.keys(s.melActive)) {
@@ -101,29 +119,24 @@ export function initPatterns(mode) {
       state.patterns[i] = JSON.parse(JSON.stringify(defaults[i]));
     } else {
       const p = { grids: [], melody: { cells: {}, instrument: mode.melodyDefaultInstrument || 'pad' } };
-      for (let gi = 0; gi < mode.mainGrids.length; gi++) {
-        p.grids[gi] = { cells: {}, instrument: mode.mainGrids[gi].defaultInstrument };
+      for (let gi = 0; gi < mainGridsDef().length; gi++) {
+        p.grids[gi] = { cells: {}, instrument: mainGridsDef()[gi].defaultInstrument };
       }
-      // Default melody: Goldberg Variation 12 — Canone alla Quarta (BWV 988)
-      // Simplified to 8-row grid. Dux enters, comes enters a 4th below offset.
-      if (i === 0 && mode.melodyGrids && mode.melodyGrids.length > 0) {
-        const totalCols = mode.melodyGrids.reduce((s, g) => s + g.cols, 0);
-        const rows = mode.melodyGrids[0].rows;
+      // Default melody: single voice spanning the full melody grid.
+      // Canon emerges only when the user enables the canon feature.
+      if (i === 0 && melGrids() && melGrids().length > 0) {
+        const totalCols = melGrids().reduce((s, g) => s + g.cols, 0);
+        const rows = melGrids()[0].rows;
         const mc = {};
-        // Dux — opening subject of Variation 12 (descending turn, ascending leap, stepwise descent)
-        // Row 0=highest pitch, row 7=lowest. Mapped to nearest scale degrees.
-        const dux =    [1, 2, 3, 2, 1, 0, 1, 2, 0, 1, 2, 3, 4, 3, 2, 1];
-        const duxCol = [0, 2, 4, 6, 8,10,12,14,18,20,22,24,28,30,32,34];
-        for (let j = 0; j < dux.length; j++) {
-          const r = Math.min(dux[j], rows - 1);
-          const c = duxCol[j] % totalCols;
+        // Extended melody line spanning the full grid — descending turns, leaps, stepwise motion.
+        // Each note placed every 2 columns; total length = totalCols.
+        const phrase = [1, 2, 3, 2, 1, 0, 1, 2, 3, 4, 3, 2, 1, 0, 2, 3,
+                        4, 5, 4, 3, 2, 1, 0, 1, 3, 2, 4, 3, 5, 4, 2, 1];
+        const noteCount = Math.min(phrase.length, Math.floor(totalCols / 2));
+        for (let j = 0; j < noteCount; j++) {
+          const r = Math.min(phrase[j], rows - 1);
+          const c = (j * 2) % totalCols;
           mc[r + '-' + c] = 1;
-        }
-        // Comes — a 4th below (4 rows down), entering 8 steps later
-        for (let j = 0; j < dux.length; j++) {
-          const r = Math.min(dux[j] + 4, rows - 1);
-          const c = (duxCol[j] + 8) % totalCols;
-          mc[r + '-' + c] = 0.5;
         }
         p.melody.cells = mc;
       }
@@ -189,9 +202,9 @@ export function loadPat(idx) {
   for (const k of Object.keys(mp.cells)) s.melActive[k] = { vol: mp.cells[k] };
 
   const mode = s.mode;
-  if (mode.melodyGrids) {
-    const totalMelCols = mode.melodyGrids.reduce((s, g) => s + g.cols, 0);
-    const melRows = mode.melodyGrids[0].rows;
+  if (melGrids()) {
+    const totalMelCols = melGrids().reduce((s, g) => s + g.cols, 0);
+    const melRows = melGrids()[0].rows;
     for (let r = 0; r < melRows; r++) {
       for (let c = 0; c < totalMelCols; c++) {
         if (s.melCells[r] && s.melCells[r][c]) {
@@ -311,9 +324,9 @@ export function tick() {
   const mode = s.mode;
   if (!mode) return;
 
-  const hasMelody = mode.melodyGrids && mode.melodyGrids.length > 0;
-  const totalMelCols = hasMelody ? mode.melodyGrids.reduce((sum, g) => sum + g.cols, 0) : 0;
-  const melRows = hasMelody ? mode.melodyGrids[0].rows : 0;
+  const hasMelody = melGrids() && melGrids().length > 0;
+  const totalMelCols = hasMelody ? melGrids().reduce((sum, g) => sum + g.cols, 0) : 0;
+  const melRows = hasMelody ? melGrids()[0].rows : 0;
 
   // Auto-cycle
   if (s.autoCycle && s.step > 0 && s.step % s.cycleSteps === 0) {
@@ -335,6 +348,10 @@ export function tick() {
 
   const t = s.ctx.currentTime + 0.02;
 
+  // Balance: 0 = all melody, 100 = all rhythm, 50 = equal
+  const rhythmBal = Math.min(1, s.balance / 50);
+  const melBal = Math.min(1, (100 - s.balance) / 50);
+
   // Crossfade
   let newV = 1, oldV = 0;
   if (s.trRem > 0) {
@@ -354,7 +371,7 @@ export function tick() {
           const period = g.cols - c;
           const a = oA[k];
           if (mod(s.step - a.offset - (g.cols - 1), period) === 0) {
-            playNote(oI, parseInt(rs), a.vol * oldV, t);
+            playNote(oI, parseInt(rs), a.vol * oldV * rhythmBal, t);
           }
         }
       }
@@ -364,7 +381,7 @@ export function tick() {
         for (const k of Object.keys(s.oldMelActive)) {
           const [, cs] = k.split('-');
           if (parseInt(cs) === mc) {
-            playNote(s.oldMelInst, parseInt(k.split('-')[0]), s.oldMelActive[k].vol * oldV, t);
+            playNote(s.oldMelInst, parseInt(k.split('-')[0]), s.oldMelActive[k].vol * oldV * melBal, t);
           }
         }
       }
@@ -384,7 +401,7 @@ export function tick() {
       const period = g.cols - c;
       const a = g.active[k];
       if (mod(s.step - a.offset - (g.cols - 1), period) === 0) {
-        playNote(g.instrument, r, a.vol * newV, t);
+        playNote(g.instrument, r, a.vol * newV * rhythmBal, t);
         trig[r] = true;
       }
       for (let j = 0; j < g.cols; j++) {
@@ -417,7 +434,7 @@ export function tick() {
         const isCursor = (c === mc);
         if (a && isCursor) {
           applyStyle(s.melCells[r][c], STYLES.TRIG);
-          if (s.step % s.melN === 0) playNote(s.melInstrument, r, a.vol * newV, t);
+          if (s.step % s.melN === 0) playNote(s.melInstrument, r, a.vol * newV * melBal, t);
         } else if (a && a.vol >= 1) applyStyle(s.melCells[r][c], STYLES.FULL);
         else if (a) applyStyle(s.melCells[r][c], STYLES.HALF);
         else if (isCursor) applyStyle(s.melCells[r][c], STYLES.LIT);
@@ -434,7 +451,7 @@ export function tick() {
           const isCursor = (c === mc);
           if (a && isCursor) {
             applyStyle(s.canonCells[r][c], STYLES.TRIG);
-            if (s.step % s.melN === 0) playNote(s.melInstrument, r, a.vol * newV, t);
+            if (s.step % s.melN === 0) playNote(s.melInstrument, r, a.vol * newV * melBal, t);
           } else if (a && a.vol >= 1) applyStyle(s.canonCells[r][c], STYLES.FULL);
           else if (a) applyStyle(s.canonCells[r][c], STYLES.HALF);
           else if (isCursor) applyStyle(s.canonCells[r][c], STYLES.LIT);
@@ -472,9 +489,9 @@ export function stop() {
   }
 
   const mode = s.mode;
-  if (mode && mode.melodyGrids) {
-    const totalMelCols = mode.melodyGrids.reduce((sum, g) => sum + g.cols, 0);
-    const melRows = mode.melodyGrids[0].rows;
+  if (mode && melGrids()) {
+    const totalMelCols = melGrids().reduce((sum, g) => sum + g.cols, 0);
+    const melRows = melGrids()[0].rows;
     for (let r = 0; r < melRows; r++) {
       for (let c = 0; c < totalMelCols; c++) {
         if (s.melCells[r] && s.melCells[r][c]) {
@@ -504,9 +521,9 @@ export function resetAll() {
   }
   state.melActive = {};
   const mode = state.mode;
-  if (mode && mode.melodyGrids) {
-    const totalMelCols = mode.melodyGrids.reduce((s, g) => s + g.cols, 0);
-    const melRows = mode.melodyGrids[0].rows;
+  if (mode && melGrids()) {
+    const totalMelCols = melGrids().reduce((s, g) => s + g.cols, 0);
+    const melRows = melGrids()[0].rows;
     for (let r = 0; r < melRows; r++)
       for (let c = 0; c < totalMelCols; c++)
         if (state.melCells[r] && state.melCells[r][c])
@@ -648,9 +665,9 @@ export function randomize() {
   // ---- Melody generation ----
   // Generate an actual melody: a single voice walking stepwise with occasional
   // leaps, creating a contour (arch, descent, zigzag, etc.)
-  if (mode.melodyGrids) {
-    const totalCols = mode.melodyGrids.reduce((s, g) => s + g.cols, 0);
-    const melRows = mode.melodyGrids[0].rows;
+  if (melGrids()) {
+    const totalCols = melGrids().reduce((s, g) => s + g.cols, 0);
+    const melRows = melGrids()[0].rows;
     const mc = {};
 
     // Choose a melodic contour strategy
@@ -716,11 +733,11 @@ export function randomize() {
       }
       state.patterns[pi].grids[gi] = { cells, instrument: base.instrument };
     }
-    if (mode.melodyGrids) {
+    if (melGrids()) {
       const baseMel = state.patterns[0].melody;
       const melCells = { ...baseMel.cells };
-      const totalCols = mode.melodyGrids.reduce((s, g) => s + g.cols, 0);
-      const melRows = mode.melodyGrids[0].rows;
+      const totalCols = melGrids().reduce((s, g) => s + g.cols, 0);
+      const melRows = melGrids()[0].rows;
       // Melody mutations: shift existing notes by small pitch intervals
       const mutations = randInt(1, 3 + pi);
       for (let m = 0; m < mutations; m++) {

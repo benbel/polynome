@@ -14,12 +14,12 @@ from common import (
     to_stereo, export_ogg, write_manifest, generate_reverb_ir,
 )
 
-FREQS = [440, 392, 330, 294, 262, 220, 196, 165]
-MEL_FREQS = [523, 440, 392, 330, 262, 220, 196, 165]
+FREQS = [523, 440, 349, 294, 220, 175, 131, 110]
+MEL_FREQS = [659, 523, 440, 349, 262, 220, 175, 131]
 
 DURATIONS = {
-    'vowels': 0.25, 'clicks': 0.12, 'hiss': 0.2,
-    'nasal': 0.25, 'liquid': 0.2, 'syllables': 0.35,
+    'vowels': 0.45, 'clicks': 0.20, 'hiss': 0.30,
+    'nasal': 0.40, 'liquid': 0.35, 'syllables': 0.65,
 }
 
 
@@ -76,12 +76,12 @@ def gen_vowels(freq, sr=SR):
     sig[:trans_n] = sig_schwa[:trans_n] * (1 - xfade) + sig_target[:trans_n] * xfade
 
     sig = sig[:n]
-    env = env_adsr(dur, 0.005, 0.03, 0.75, 0.06, sr)
+    env = env_adsr(dur, 0.008, 0.06, 0.8, 0.12, sr)
     sig *= env[:len(sig)]
 
     result = normalize(sig, 0.85)
-    fade_in(result, 2, sr)
-    fade_out(result, 15, sr)
+    fade_in(result, 3, sr)
+    fade_out(result, 30, sr)
     return to_stereo(result, 0)
 
 
@@ -218,78 +218,100 @@ def gen_liquid(freq, sr=SR):
     return to_stereo(result, 0)
 
 
-def gen_syllables(freq, sr=SR):
-    """Full CV syllables — realistic consonant onset into vowel body."""
-    dur = DURATIONS['syllables']
-    n = int(sr * dur)
-
-    # 6 syllable types for variety: ba, ti, ku, me, no, la
-    stype = int(freq) % 6
-    consonant_configs = [
-        # (burst_bw_low, burst_bw_high, burst_dur, asp_amount, label)
-        (200, 800, 0.006, 0.15, 'ba'),     # labial stop
-        (2000, 5000, 0.004, 0.35, 'ti'),    # alveolar stop + aspiration
-        (800, 2000, 0.005, 0.25, 'ku'),     # velar stop
-        (200, 800, 0.006, 0.0, 'me'),       # nasal onset (no burst)
-        (200, 500, 0.008, 0.0, 'no'),       # nasal onset
-        (300, 1500, 0.003, 0.1, 'la'),      # lateral approximant
-    ]
-    vowel_formants = [
-        [(730, 90, 0), (1090, 110, -6), (2440, 170, -12)],  # a
-        [(270, 60, 0), (2290, 200, -6), (3010, 200, -12)],  # i
-        [(300, 60, 0), (870, 100, -6), (2240, 170, -12)],   # u
-        [(530, 80, 0), (1840, 150, -6), (2480, 180, -12)],  # e
-        [(570, 80, 0), (840, 100, -6), (2410, 170, -12)],   # o
-        [(730, 90, 0), (1090, 110, -6), (2440, 170, -12)],  # a
-    ]
-
-    bw_lo, bw_hi, bdur, asp, label = consonant_configs[stype]
-    sig = np.zeros(n)
+def _make_syllable(sig, offset, freq, bw_lo, bw_hi, bdur, asp, is_nasal,
+                    vowel_formants, vowel_dur, sr):
+    """Render one CV syllable into sig at the given sample offset."""
+    n = len(sig)
 
     # Consonant onset
-    if label in ('me', 'no'):
-        # Nasal onset: brief nasal murmur before vowel
+    if is_nasal:
         nasal_dur = 0.025
         ns = glottal_source(freq, nasal_dur, sr)
         ns = lowpass(ns, 400, sr) * 0.5
-        sig[:len(ns)] = ns
+        end = min(offset + len(ns), n)
+        sig[offset:end] += ns[:end - offset]
     else:
-        # Stop/approximant burst
         burst = noise(bdur, sr)
         burst = bandpass(burst, max(20, bw_lo), min(sr/2-100, bw_hi), sr)
         burst_env = env_exp_decay(bdur, 0.2, 0.004, sr)
         burst *= burst_env
-        sig[:len(burst)] = burst
+        end = min(offset + len(burst), n)
+        sig[offset:end] += burst[:end - offset]
 
-    # Aspiration (if any)
+    # Aspiration
     if asp > 0:
         asp_sig = noise(0.02, sr) * asp
         asp_sig = bandpass(asp_sig, 1500, min(sr/2-100, 5000), sr)
         asp_env = env_exp_decay(0.02, 0.2, 0.012, sr)
         asp_sig *= asp_env
-        asp_start = int(sr * bdur)
+        asp_start = offset + int(sr * bdur)
         end = min(asp_start + len(asp_sig), n)
-        sig[asp_start:end] += asp_sig[:end-asp_start]
+        if end > asp_start:
+            sig[asp_start:end] += asp_sig[:end - asp_start]
 
-    # Vowel body with formant transition from consonant locus
-    source = glottal_source(freq, dur, sr)
-    vowel = formant_synth(source, vowel_formants[stype], sr)
-    # Smooth vowel onset
-    vowel_start = int(sr * 0.02)
+    # Vowel body
+    source = glottal_source(freq, vowel_dur, sr)
+    vowel = formant_synth(source, vowel_formants, sr)
+    vowel_start = offset + int(sr * 0.02)
     vowel_ramp = int(sr * 0.015)
     end = min(vowel_start + len(vowel), n)
-    vslice = vowel[:end - vowel_start]
-    # Ramp in the vowel
-    ramp = np.ones(len(vslice))
-    ramp[:vowel_ramp] = np.linspace(0, 1, vowel_ramp)
-    sig[vowel_start:end] += vslice * ramp
+    if end > vowel_start:
+        vslice = vowel[:end - vowel_start]
+        ramp = np.ones(len(vslice))
+        ramp[:min(vowel_ramp, len(ramp))] = np.linspace(0, 1, min(vowel_ramp, len(ramp)))
+        sig[vowel_start:end] += vslice * ramp
 
-    env = env_adsr(dur, 0.005, 0.04, 0.7, 0.08, sr)
+
+def gen_syllables(freq, sr=SR):
+    """Multi-syllable word-like sounds — CVCV patterns so music emerges from talk."""
+    dur = DURATIONS['syllables']
+    n = int(sr * dur)
+
+    # 8 word-like patterns for variety: baba, tiku, meno, laba, kume, nola, bati, mela
+    consonant_configs = [
+        (200, 800, 0.006, 0.15, False),    # b — labial stop
+        (2000, 5000, 0.004, 0.35, False),   # t — alveolar stop
+        (800, 2000, 0.005, 0.25, False),    # k — velar stop
+        (200, 800, 0.006, 0.0, True),       # m — nasal
+        (200, 500, 0.008, 0.0, True),       # n — nasal
+        (300, 1500, 0.003, 0.1, False),     # l — lateral
+    ]
+    vowel_sets = [
+        [(730, 90, 0), (1090, 110, -6), (2440, 170, -12)],  # a
+        [(270, 60, 0), (2290, 200, -6), (3010, 200, -12)],  # i
+        [(300, 60, 0), (870, 100, -6), (2240, 170, -12)],   # u
+        [(530, 80, 0), (1840, 150, -6), (2480, 180, -12)],  # e
+        [(570, 80, 0), (840, 100, -6), (2410, 170, -12)],   # o
+    ]
+    # Word patterns: pairs of (consonant_idx, vowel_idx)
+    words = [
+        [(0, 0), (0, 0)],  # ba-ba
+        [(1, 3), (2, 2)],  # te-ku
+        [(3, 3), (4, 4)],  # me-no
+        [(5, 0), (0, 0)],  # la-ba
+        [(2, 2), (3, 3)],  # ku-me
+        [(4, 4), (5, 0)],  # no-la
+        [(0, 0), (1, 3)],  # ba-te
+        [(3, 3), (5, 0)],  # me-la
+    ]
+
+    wtype = int(freq) % len(words)
+    word = words[wtype]
+    sig = np.zeros(n)
+    syl_dur = dur / len(word)
+
+    for si, (ci, vi) in enumerate(word):
+        offset = int(sr * si * syl_dur)
+        bw_lo, bw_hi, bdur, asp, is_nasal = consonant_configs[ci]
+        _make_syllable(sig, offset, freq, bw_lo, bw_hi, bdur, asp, is_nasal,
+                       vowel_sets[vi], syl_dur, sr)
+
+    env = env_adsr(dur, 0.005, 0.06, 0.7, 0.12, sr)
     sig *= env[:len(sig)]
 
     result = normalize(sig, 0.85)
     fade_in(result, 2, sr)
-    fade_out(result, 20, sr)
+    fade_out(result, 30, sr)
     return to_stereo(result, 0)
 
 

@@ -14,8 +14,8 @@ from common import (
     to_stereo, mix_stereo, export_ogg, write_manifest, generate_reverb_ir,
 )
 
-FREQS = [262, 220, 196, 165, 131, 110, 98, 82, 73, 65, 55, 49, 41, 33, 27, 21]
-MEL_FREQS = [523, 440, 392, 330, 262, 220, 196, 165]
+FREQS = [523, 440, 370, 311, 262, 220, 175, 147, 123, 104, 82, 65, 55, 44, 33, 25]
+MEL_FREQS = [659, 523, 440, 349, 262, 220, 175, 131]
 
 DURATIONS = {
     'throat': 3.0, 'overtone': 3.0, 'breath': 2.5, 'belt': 2.5, 'hum': 3.0,

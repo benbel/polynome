@@ -13,7 +13,7 @@ from common import (
 )
 
 # Default scale if no analysis available
-DEFAULT_FREQS = [440, 392, 330, 294, 262, 220, 196, 165]
+DEFAULT_FREQS = [523, 440, 370, 311, 262, 220, 175, 131]
 
 # Brighter, more bell-like tone — joyful, sparkling character
 DEFAULT_ENVELOPE = {

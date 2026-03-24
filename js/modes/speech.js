@@ -51,8 +51,8 @@ export default {
     compRatio: 5,
   },
 
-  mainFreqs: [440, 392, 330, 294, 262, 220, 196, 165],
-  melodyFreqs: [523, 440, 392, 330, 262, 220, 196, 165],
+  mainFreqs: [523, 440, 349, 294, 220, 175, 131, 110],
+  melodyFreqs: [659, 523, 440, 349, 262, 220, 175, 131],
   numPatterns: 8,
   defaultMelN: 2,
   cellSize: 20,
