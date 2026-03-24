@@ -160,6 +160,7 @@ export function savePat(idx) {
 
 export function loadPat(idx) {
   const s = state;
+  const mode = s.mode;
   s.oldActives = [];
   s.oldInsts = [];
   for (let gi = 0; gi < s.grids.length; gi++) {
@@ -205,8 +206,6 @@ export function loadPat(idx) {
   s.melInstrument = mp.instrument;
   for (const b of s.melButtons) b.className = b.dataset.inst === s.melInstrument ? 'sel' : '';
   for (const k of Object.keys(mp.cells)) s.melActive[k] = { vol: mp.cells[k] };
-
-  const mode = s.mode;
   if (melGrids()) {
     const totalMelCols = melGrids().reduce((s, g) => s + g.cols, 0);
     const melRows = melGrids()[0].rows;
@@ -425,9 +424,12 @@ export function tick() {
           playNote(g.instrument, r, vol * newV * rhythmBal, t);
           trig[r] = true;
         }
-        // Lit: show upcoming triggers in the sequence
-        for (let j = 0; j < g.cols; j++) {
-          if (mode.colSeqs[j] && mode.colSeqs[j][seqIdx] && g.active[r + '-' + j]) lit[r][j] = true;
+        // Light travel: lights spawn at column 0 on trigger and travel rightward
+        for (let d = 0; d < g.cols; d++) {
+          const pastIdx = mod(seqIdx - d, mode.seqLen);
+          if (mode.colSeqs[c][pastIdx]) {
+            if (d < g.cols) lit[r][d] = true;
+          }
         }
       } else {
         const period = g.cols - c;
@@ -445,7 +447,7 @@ export function tick() {
       for (let c = 0; c < g.cols; c++) {
         const a = g.active[r + '-' + c];
         const isL = !!lit[r][c];
-        const isT = trig[r] && isL;
+        const isT = trig[r] && isL && c === g.cols - 1;
         if (isT) applyStyle(g.cells[r][c], STYLES.TRIG);
         else if (a && a.vol >= 1) applyStyle(g.cells[r][c], STYLES.FULL);
         else if (a) applyStyle(g.cells[r][c], STYLES.HALF);
