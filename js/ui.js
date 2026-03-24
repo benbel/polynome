@@ -43,19 +43,18 @@ export async function switchMode(modeId) {
   progressFill.style.width = '0%';
   main.style.display = 'none';
 
-  // Init audio context
+  // Init audio context (don't await resume — it needs a user gesture)
   if (!state.ctx) {
     state.ctx = new AudioContext();
-    if (state.ctx.state === 'suspended') await state.ctx.resume();
   }
 
-  // Build effects chain
-  buildEffects(mode.effects);
-
-  // Load buffers
+  // Load buffers (decodeAudioData works on suspended contexts)
   state.buffers = await loadMode(modeId, pct => {
     progressFill.style.width = (pct * 100) + '%';
   });
+
+  // Build effects chain
+  buildEffects(mode.effects);
 
   // Restore or init patterns
   if (state.modePatterns[modeId]) {
@@ -346,7 +345,7 @@ export function initApp() {
     loadSong(s => {
       if (s.bpm) { state.stepMs = Math.round(60000 / s.bpm); slider.value = 550 - state.stepMs; updateBpm(); }
       if (s.cycleSteps) { state.cycleSteps = s.cycleSteps; cycleSlider.value = s.cycleSteps; updateCycleDisp(); }
-      if (typeof s.autoCycle === 'boolean') { state.autoCycle = s.autoCycle; document.getElementById('cycleToggle').textContent = s.autoCycle ? '\u27f3 on' : '\u27f3 off'; }
+      if (typeof s.autoCycle === 'boolean') { state.autoCycle = s.autoCycle; document.getElementById('cycleToggle').textContent = s.autoCycle ? 'cycle on' : 'cycle off'; }
       if (s.melN) { state.melN = s.melN; melSlider.value = s.melN; updateMelN(); }
       updateCtl();
     });

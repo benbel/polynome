@@ -358,6 +358,7 @@ export function tick() {
 
 export function start() {
   if (!state.ctx) return;
+  if (state.ctx.state === 'suspended') state.ctx.resume();
   state.playing = true;
   tick();
   state.timer = setInterval(tick, state.stepMs);
