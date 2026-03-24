@@ -184,8 +184,13 @@ export function loadPat(idx) {
     for (const k of Object.keys(pat.cells)) {
       const [, cs] = k.split('-');
       const c = parseInt(cs);
-      const period = g.cols - c;
-      g.active[k] = { offset: s.step - (g.cols - 1) - Math.floor(Math.random() * period), vol: pat.cells[k] };
+      if (mode.colSeqs) {
+        // Sequence mode: offset not used; trigger is purely sequence-driven
+        g.active[k] = { offset: 0, vol: pat.cells[k] };
+      } else {
+        const period = g.cols - c;
+        g.active[k] = { offset: s.step - (g.cols - 1) - Math.floor(Math.random() * period), vol: pat.cells[k] };
+      }
     }
     for (let r = 0; r < g.rows; r++) {
       for (let c = 0; c < g.cols; c++) {
@@ -319,6 +324,15 @@ export function playNote(inst, fi, vol, time) {
 
 function mod(a, n) { return ((a % n) + n) % n; }
 
+// Sequence-based trigger check for original mode (Press Cafe).
+// Returns true if the cell at column `col` should fire on step `step`.
+function seqTrigger(mode, col, step) {
+  const seqs = mode.colSeqs;
+  if (!seqs) return false;
+  const len = mode.seqLen || seqs[0].length;
+  return seqs[col][mod(step, len)] === 1;
+}
+
 export function tick() {
   const s = state;
   const mode = s.mode;
@@ -368,10 +382,13 @@ export function tick() {
         for (const k of Object.keys(oA)) {
           const [rs, cs] = k.split('-');
           const c = parseInt(cs);
-          const period = g.cols - c;
           const a = oA[k];
-          if (mod(s.step - a.offset - (g.cols - 1), period) === 0) {
-            playNote(oI, parseInt(rs), a.vol * oldV * rhythmBal, t);
+          const fires = mode.colSeqs
+            ? seqTrigger(mode, c, s.step)
+            : mod(s.step - a.offset - (g.cols - 1), g.cols - c) === 0;
+          if (fires) {
+            const vol = mode.stepVels ? a.vol * mode.stepVels[mod(s.step, mode.seqLen)] : a.vol;
+            playNote(oI, parseInt(rs), vol * oldV * rhythmBal, t);
           }
         }
       }
@@ -395,17 +412,32 @@ export function tick() {
     const trig = [];
     for (let r = 0; r < g.rows; r++) { lit[r] = {}; trig[r] = false; }
 
+    const useSeq = !!mode.colSeqs;
+    const seqIdx = useSeq ? mod(s.step, mode.seqLen) : -1;
+
     for (const k of Object.keys(g.active)) {
       const [rs, cs] = k.split('-');
       const r = parseInt(rs), c = parseInt(cs);
-      const period = g.cols - c;
       const a = g.active[k];
-      if (mod(s.step - a.offset - (g.cols - 1), period) === 0) {
-        playNote(g.instrument, r, a.vol * newV * rhythmBal, t);
-        trig[r] = true;
-      }
-      for (let j = 0; j < g.cols; j++) {
-        if (mod(s.step - a.offset - j, period) === 0) lit[r][j] = true;
+      if (useSeq) {
+        if (mode.colSeqs[c][seqIdx]) {
+          const vol = mode.stepVels ? a.vol * mode.stepVels[seqIdx] : a.vol;
+          playNote(g.instrument, r, vol * newV * rhythmBal, t);
+          trig[r] = true;
+        }
+        // Lit: show upcoming triggers in the sequence
+        for (let j = 0; j < g.cols; j++) {
+          if (mode.colSeqs[j] && mode.colSeqs[j][seqIdx] && g.active[r + '-' + j]) lit[r][j] = true;
+        }
+      } else {
+        const period = g.cols - c;
+        if (mod(s.step - a.offset - (g.cols - 1), period) === 0) {
+          playNote(g.instrument, r, a.vol * newV * rhythmBal, t);
+          trig[r] = true;
+        }
+        for (let j = 0; j < g.cols; j++) {
+          if (mod(s.step - a.offset - j, period) === 0) lit[r][j] = true;
+        }
       }
     }
 
@@ -413,8 +445,8 @@ export function tick() {
       for (let c = 0; c < g.cols; c++) {
         const a = g.active[r + '-' + c];
         const isL = !!lit[r][c];
-        const isT = trig[r] && c === g.cols - 1;
-        if (isT && isL) applyStyle(g.cells[r][c], STYLES.TRIG);
+        const isT = trig[r] && isL;
+        if (isT) applyStyle(g.cells[r][c], STYLES.TRIG);
         else if (a && a.vol >= 1) applyStyle(g.cells[r][c], STYLES.FULL);
         else if (a) applyStyle(g.cells[r][c], STYLES.HALF);
         else if (isL) applyStyle(g.cells[r][c], STYLES.LIT);
@@ -620,60 +652,75 @@ export function randomize() {
   for (let gi = 0; gi < state.grids.length; gi++) {
     const g = state.grids[gi];
     const rows = g.rows, cols = g.cols;
-    const mc = maxCol(cols);
     const cells = {};
 
-    // Pick coprime periods for this grid
-    const periods = pick(coprimeSets).filter(p => p <= mc);
-    if (periods.length === 0) continue;
-
-    const allRows = shuffle([...Array(rows).keys()]);
-    let ri = 0;
-
-    // --- Anchor rows: one per period, with pattern variety ---
-    const anchorInfo = []; // store for response rows
-    for (const period of periods) {
-      if (ri >= rows) break;
-      const row = allRows[ri++];
-      const col = mc - period; // column that gives this period
-      const patType = pick(['pulse', 'skip', 'cluster']);
-
-      if (patType === 'pulse') {
-        // Single cell — clean periodic pulse
-        cells[row + '-' + col] = 1;
-      } else if (patType === 'skip') {
-        // Two cells with different periods — polyrhythmic
-        cells[row + '-' + col] = 1;
-        const col2 = Math.max(0, Math.min(mc, col - randInt(1, 3)));
-        if (col2 !== col) cells[row + '-' + col2] = 0.5;
-      } else {
-        // Cluster: 2-3 adjacent cells creating burst patterns
-        cells[row + '-' + col] = 1;
-        if (col > 0) cells[row + '-' + (col - 1)] = 0.5;
-        if (col > 1 && Math.random() > 0.5) cells[row + '-' + (col - 2)] = 0.5;
+    if (mode.colSeqs) {
+      // Sequence-based (original mode): pick 3-5 cells from interesting columns
+      const allRows = shuffle([...Array(rows).keys()]);
+      const interestingCols = [];
+      for (let c = 0; c < cols; c++) {
+        if (mode.colSeqs[c] && mode.colSeqs[c].some(v => v === 0)) interestingCols.push(c);
       }
-      anchorInfo.push({ row, period, col });
-    }
-
-    // --- Response rows: play on OFF-beats of an anchor ---
-    const nResponse = randInt(1, 2);
-    for (let rr = 0; rr < nResponse && ri < rows; rr++) {
-      const row = allRows[ri++];
-      const anchor = pick(anchorInfo);
-      // Offset by half the anchor's period
-      const offset = Math.floor(anchor.period / 2);
-      const responseCol = Math.max(0, Math.min(mc, anchor.col + offset));
-      if (responseCol !== anchor.col) {
-        cells[row + '-' + responseCol] = 0.5;
+      const useCols = shuffle(interestingCols.length > 0 ? interestingCols : [...Array(cols).keys()]);
+      const n = randInt(3, 5);
+      for (let i = 0; i < n && i < rows && i < useCols.length; i++) {
+        cells[allRows[i] + '-' + useCols[i]] = i === 0 ? 1 : 0.5;
       }
-    }
+    } else {
+      const mc = maxCol(cols);
 
-    // --- Accent row: single strong hit at phrase boundary ---
-    if (ri < rows && Math.random() > 0.3) {
-      const row = allRows[ri++];
-      // Phrase-start accent at column 0 (longest period) or mid-point
-      const accentCol = pick([0, Math.floor(mc / 2)]);
-      cells[row + '-' + accentCol] = 1;
+      // Pick coprime periods for this grid
+      const periods = pick(coprimeSets).filter(p => p <= mc);
+      if (periods.length === 0) continue;
+
+      const allRows = shuffle([...Array(rows).keys()]);
+      let ri = 0;
+
+      // --- Anchor rows: one per period, with pattern variety ---
+      const anchorInfo = []; // store for response rows
+      for (const period of periods) {
+        if (ri >= rows) break;
+        const row = allRows[ri++];
+        const col = mc - period; // column that gives this period
+        const patType = pick(['pulse', 'skip', 'cluster']);
+
+        if (patType === 'pulse') {
+          // Single cell — clean periodic pulse
+          cells[row + '-' + col] = 1;
+        } else if (patType === 'skip') {
+          // Two cells with different periods — polyrhythmic
+          cells[row + '-' + col] = 1;
+          const col2 = Math.max(0, Math.min(mc, col - randInt(1, 3)));
+          if (col2 !== col) cells[row + '-' + col2] = 0.5;
+        } else {
+          // Cluster: 2-3 adjacent cells creating burst patterns
+          cells[row + '-' + col] = 1;
+          if (col > 0) cells[row + '-' + (col - 1)] = 0.5;
+          if (col > 1 && Math.random() > 0.5) cells[row + '-' + (col - 2)] = 0.5;
+        }
+        anchorInfo.push({ row, period, col });
+      }
+
+      // --- Response rows: play on OFF-beats of an anchor ---
+      const nResponse = randInt(1, 2);
+      for (let rr = 0; rr < nResponse && ri < rows; rr++) {
+        const row = allRows[ri++];
+        const anchor = pick(anchorInfo);
+        // Offset by half the anchor's period
+        const offset = Math.floor(anchor.period / 2);
+        const responseCol = Math.max(0, Math.min(mc, anchor.col + offset));
+        if (responseCol !== anchor.col) {
+          cells[row + '-' + responseCol] = 0.5;
+        }
+      }
+
+      // --- Accent row: single strong hit at phrase boundary ---
+      if (ri < rows && Math.random() > 0.3) {
+        const row = allRows[ri++];
+        // Phrase-start accent at column 0 (longest period) or mid-point
+        const accentCol = pick([0, Math.floor(mc / 2)]);
+        cells[row + '-' + accentCol] = 1;
+      }
     }
 
     state.patterns[0].grids[gi] = { cells, instrument: pick(mode.mainInstruments).id };

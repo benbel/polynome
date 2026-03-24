@@ -1,7 +1,37 @@
 // original mode — Replication of stretta's monome Press Cafe video.
-// The performer only had ~4-5 cells active at a time.  Each cell's
-// column sets its repeat period, so a handful of cells creates the
-// characteristic cascading polyrhythmic texture.
+// Each column holds a predefined 16-step rhythmic sequence (from the
+// Gridlab Connect Press Cafe amxd).  Pressing a cell activates that
+// column's sequence for the corresponding row's pitch.
+
+// Column sequences extracted from the amxd autopattr restore data.
+// Each array is 16 steps long; 1 = trigger, 0 = silent.
+// Velocities per step: 127 36 64 36 127 36 64 36 127 36 72 36 127 36 90 36
+export const COL_SEQS = [
+  [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0],  // col  0: alternating
+  [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],  // col  1: quarter
+  [1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1],  // col  2: syncopated
+  [1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1],  // col  3
+  [1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0],  // col  4
+  [1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1],  // col  5
+  [1, 1, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 1],  // col  6
+  [1, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0],  // col  7
+  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],  // col  8: every step
+  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],  // col  9
+  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],  // col 10
+  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],  // col 11
+  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],  // col 12
+  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],  // col 13
+  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],  // col 14
+  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],  // col 15
+];
+
+// Step velocities from the amxd (normalized to 0–1)
+export const STEP_VELS = [
+  127, 36, 64, 36, 127, 36, 64, 36,
+  127, 36, 72, 36, 127, 36, 90, 36,
+].map(v => v / 127);
+
+const SEQ_LEN = 16;
 
 const V = 0.5;
 
@@ -9,52 +39,13 @@ function pat(cells) {
   return { grids: [{ cells, instrument: 'tone' }], melody: { cells: {}, instrument: 'tone' } };
 }
 
-// Pattern 1 — 2 cells
-const p1 = pat({
-  '3-12': 1,   // period 4
-  '7-10': V,   // period 6
-});
-
-// Pattern 2 — 3 cells
-const p2 = pat({
-  '0-14': V,   // period 2
-  '3-12': 1,   // period 4
-  '7-10': V,   // period 6
-});
-
-// Pattern 3 — 4 cells
-const p3 = pat({
-  '0-14': V,   // period 2
-  '1-12': 1,   // period 4
-  '5-10': V,   // period 6
-  '7-7': V,    // period 9
-});
-
-// Pattern 4 — 5 cells
-const p4 = pat({
-  '0-14': V,   // period 2
-  '2-12': 1,   // period 4
-  '4-9': V,    // period 7
-  '6-7': V,    // period 9
-  '7-5': V,    // period 11
-});
-
-// Pattern 5 — 4 cells, different positions
-const p5 = pat({
-  '1-12': 1,   // period 4
-  '3-8': 1,    // period 8
-  '5-10': V,   // period 6
-  '7-6': V,    // period 10
-});
-
-// Pattern 6 — 5 cells, final variation
-const p6 = pat({
-  '0-14': V,   // period 2
-  '2-12': 1,   // period 4
-  '4-8': 1,    // period 8
-  '6-10': V,   // period 6
-  '7-5': V,    // period 11
-});
+// Default patterns — a few cells active to create layered polyrhythms
+const p1 = pat({ '3-2': 1, '7-1': V });
+const p2 = pat({ '0-0': V, '3-2': 1, '7-1': V });
+const p3 = pat({ '0-0': V, '1-2': 1, '5-5': V, '7-7': V });
+const p4 = pat({ '0-0': V, '2-3': 1, '4-6': V, '6-7': V, '7-5': V });
+const p5 = pat({ '1-2': 1, '3-4': 1, '5-6': V, '7-7': V });
+const p6 = pat({ '0-0': V, '2-3': 1, '4-4': 1, '6-5': V, '7-7': V });
 
 export default {
   id: 'original',
@@ -94,6 +85,9 @@ export default {
   defaultStepMs: 450,
   numPatterns: 6,
   cellSize: 28,
+  seqLen: SEQ_LEN,
+  colSeqs: COL_SEQS,
+  stepVels: STEP_VELS,
   hideControls: ['melody'],
   defaultPatterns: [p1, p2, p3, p4, p5, p6],
 };
