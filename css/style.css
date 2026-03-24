@@ -7,13 +7,13 @@ body {
 }
 
 #loading {
-  color: #ccc; font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+  color: #888; font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
 }
 #progress-bar {
-  width: 200px; height: 2px; background: #eee; margin-top: 8px; display: none;
+  width: 200px; height: 2px; background: #ddd; margin-top: 8px; display: none;
 }
 #progress-fill {
-  height: 100%; background: #ccc; width: 0%; transition: width 0.1s;
+  height: 100%; background: #999; width: 0%; transition: width 0.1s;
 }
 
 #main {
@@ -35,16 +35,16 @@ body {
 }
 .mode-btn {
   font-family: 'Courier New', monospace; font-size: 10px; letter-spacing: 1px;
-  text-transform: uppercase; background: transparent; border: 1px solid #e0e0e0;
-  border-radius: 6px; padding: 4px 10px; cursor: pointer; color: #bbb; transition: all 0.15s;
+  text-transform: uppercase; background: transparent; border: 1px solid #ccc;
+  border-radius: 6px; padding: 4px 10px; cursor: pointer; color: #777; transition: all 0.15s;
   text-align: left; white-space: nowrap;
 }
-.mode-btn.sel { color: #888; border-color: #bbb; background: rgba(240, 235, 225, 0.6); }
+.mode-btn.sel { color: #444; border-color: #999; background: rgba(240, 235, 225, 0.6); }
 
 /* Controls column */
 #ctrl-col {
   display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
-  color: #bbb; font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+  color: #777; font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
 }
 #ctrl-col span { cursor: pointer; white-space: nowrap; }
 #ctrl-col input[type=range] { width: 60px; }
@@ -54,10 +54,10 @@ body {
 
 .pat-btn {
   width: 20px; height: 20px; font-family: 'Courier New', monospace; font-size: 9px;
-  background: transparent; border: 1px solid #e0e0e0; border-radius: 4px;
-  cursor: pointer; color: #ccc; text-align: center; line-height: 20px; transition: all 0.15s;
+  background: transparent; border: 1px solid #ccc; border-radius: 4px;
+  cursor: pointer; color: #888; text-align: center; line-height: 20px; transition: all 0.15s;
 }
-.pat-btn.sel { color: #999; border-color: #bbb; background: rgba(255, 225, 180, 0.5); }
+.pat-btn.sel { color: #555; border-color: #999; background: rgba(255, 225, 180, 0.5); }
 
 #content {
   display: flex; flex-direction: column; align-items: center; gap: 16px;
@@ -71,30 +71,30 @@ body {
 .inst { margin-bottom: 6px; display: flex; gap: 5px; flex-wrap: wrap; justify-content: center; }
 .inst button {
   font-family: 'Courier New', monospace; font-size: 9px; letter-spacing: 1px;
-  text-transform: uppercase; background: transparent; border: 1px solid #ddd;
-  border-radius: 6px; padding: 3px 8px; cursor: pointer; color: #aaa; transition: all 0.1s;
+  text-transform: uppercase; background: transparent; border: 1px solid #bbb;
+  border-radius: 6px; padding: 3px 8px; cursor: pointer; color: #666; transition: all 0.1s;
 }
-.inst button.sel { color: #888; border-color: #bbb; background: rgba(240, 235, 225, 0.6); }
+.inst button.sel { color: #444; border-color: #999; background: rgba(240, 235, 225, 0.6); }
 
 #mel-wrap {
   display: flex; flex-direction: column; align-items: center;
-  border-top: 1px solid #eee; padding-top: 12px;
+  border-top: 1px solid #ddd; padding-top: 12px;
 }
 #mel-grids { display: flex; gap: 16px; }
 
 input[type=range] {
   -webkit-appearance: none; appearance: none;
-  width: 80px; height: 1px; background: #ccc; outline: none;
+  width: 80px; height: 1px; background: #999; outline: none;
 }
 input[type=range]::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 10px; height: 10px; background: #aaa;
+  -webkit-appearance: none; width: 10px; height: 10px; background: #666;
   border-radius: 0; cursor: pointer;
 }
 input[type=range]::-moz-range-thumb {
-  width: 10px; height: 10px; background: #aaa; border: none;
+  width: 10px; height: 10px; background: #666; border: none;
   border-radius: 0; cursor: pointer;
 }
 
 .cell {
-  border: 1px solid #ebebeb; border-radius: 5px; background: transparent; cursor: pointer;
+  border: 1px solid #ddd; border-radius: 5px; background: transparent; cursor: pointer;
 }
