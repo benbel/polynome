@@ -353,5 +353,5 @@ export function initApp() {
   });
 
   // Auto-start default mode
-  switchMode('texture');
+  switchMode('original');
 }

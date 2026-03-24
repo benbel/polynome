@@ -52,12 +52,17 @@ export const state = {
 export function initPatterns(mode) {
   const n = mode.numPatterns || 8;
   state.patterns = [];
+  const defaults = mode.defaultPatterns || [];
   for (let i = 0; i < n; i++) {
-    const p = { grids: [], melody: { cells: {}, instrument: mode.melodyDefaultInstrument || 'pad' } };
-    for (let gi = 0; gi < mode.mainGrids.length; gi++) {
-      p.grids[gi] = { cells: {}, instrument: mode.mainGrids[gi].defaultInstrument };
+    if (i < defaults.length) {
+      state.patterns[i] = JSON.parse(JSON.stringify(defaults[i]));
+    } else {
+      const p = { grids: [], melody: { cells: {}, instrument: mode.melodyDefaultInstrument || 'pad' } };
+      for (let gi = 0; gi < mode.mainGrids.length; gi++) {
+        p.grids[gi] = { cells: {}, instrument: mode.mainGrids[gi].defaultInstrument };
+      }
+      state.patterns[i] = p;
     }
-    state.patterns[i] = p;
   }
 }
 
