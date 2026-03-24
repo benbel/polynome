@@ -352,9 +352,6 @@ export function initApp() {
     });
   });
 
-  // Click to start — load default mode
-  document.addEventListener('click', function handler() {
-    document.removeEventListener('click', handler);
-    switchMode('texture');
-  }, { once: true });
+  // Auto-start default mode
+  switchMode('texture');
 }
