@@ -23,45 +23,56 @@ def main():
 
     iterations = []
     composites = []
-    metrics_data = {}
+    descriptions = []
 
     with open(log_path) as f:
         reader = csv.DictReader(f)
         for row in reader:
             iterations.append(int(row['iteration']))
             composites.append(float(row['composite']))
-            for k, v in row.items():
-                if k not in ('iteration', 'composite', 'timestamp'):
-                    if k not in metrics_data:
-                        metrics_data[k] = []
-                    metrics_data[k].append(float(v))
+            descriptions.append(row.get('description', ''))
 
     import matplotlib
     if args.save:
         matplotlib.use('Agg')
     import matplotlib.pyplot as plt
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+    fig, ax = plt.subplots(figsize=(12, 6))
 
-    # Top: composite distance
-    ax1.plot(iterations, composites, 'b-o', markersize=4, linewidth=1.5, label='Composite')
-    ax1.set_ylabel('Composite Distance')
-    ax1.set_title('Optimization Progress')
-    ax1.grid(True, alpha=0.3)
-    ax1.legend()
+    ax.plot(iterations, composites, 'b-o', markersize=3, linewidth=1.5, label='Composite Distance')
+    ax.set_xlabel('Iteration')
+    ax.set_ylabel('Composite Distance')
+    ax.set_title('Polynome Optimization Progress')
+    ax.grid(True, alpha=0.3)
+
     if composites:
-        ax1.set_ylim(bottom=0, top=max(composites) * 1.1)
+        ax.set_ylim(bottom=0, top=max(composites) * 1.1)
 
-    # Bottom: per-metric breakdown
-    colors = plt.cm.tab10(range(len(metrics_data)))
-    for (name, values), color in zip(sorted(metrics_data.items()), colors):
-        ax2.plot(iterations, values, '-', linewidth=1, label=name, color=color, alpha=0.8)
-    ax2.set_xlabel('Iteration')
-    ax2.set_ylabel('Metric Value')
-    ax2.set_title('Per-Metric Breakdown')
-    ax2.grid(True, alpha=0.3)
-    ax2.legend(fontsize=7, ncol=2)
+    # Annotate key milestones
+    best_so_far = float('inf')
+    milestones = []
+    for i, (it, comp, desc) in enumerate(zip(iterations, composites, descriptions)):
+        if comp < best_so_far:
+            best_so_far = comp
+            milestones.append((it, comp, desc))
 
+    # Show a few key milestone annotations (not all, to avoid clutter)
+    step = max(1, len(milestones) // 8)
+    for idx in range(0, len(milestones), step):
+        it, comp, desc = milestones[idx]
+        short = desc[:30] + '...' if len(desc) > 30 else desc
+        if short:
+            ax.annotate(f'{comp:.3f}', (it, comp),
+                        textcoords="offset points", xytext=(5, 8),
+                        fontsize=7, color='darkblue', alpha=0.8)
+    # Always annotate the last point
+    if milestones:
+        it, comp, desc = milestones[-1]
+        ax.annotate(f'{comp:.4f}', (it, comp),
+                    textcoords="offset points", xytext=(5, 8),
+                    fontsize=8, color='red', fontweight='bold')
+
+    ax.legend()
     plt.tight_layout()
 
     if args.save:

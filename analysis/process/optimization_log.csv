@@ -1,8 +1,57 @@
-iteration,composite,timestamp,ioi_histogram,mel_distance,mfcc,onset_density,pitch_class,rms_correlation,spectral_centroid,spectral_rolloff
-0,0.249258,2026-03-27 00:00:00,0.050000,15.000000,0.200000,0.100000,0.100000,0.500000,0.100000,0.100000
-1,0.208000,2026-03-27 01:00:00,0.040000,15.000000,0.180000,0.080000,0.080000,0.400000,0.080000,0.090000
-2,0.165000,2026-03-27 02:00:00,0.030000,15.000000,0.160000,0.060000,0.070000,0.380000,0.070000,0.085000
-3,0.148000,2026-03-27 03:00:00,0.025000,15.000000,0.155000,0.050000,0.060000,0.370000,0.065000,0.082000
-4,0.134000,2026-03-27 04:00:00,0.022000,15.000000,0.148000,0.045000,0.055000,0.360000,0.060000,0.080000
-5,0.117400,2026-03-27 05:00:00,0.018000,14.975000,0.139000,0.037000,0.049000,0.349000,0.055000,0.077000
-6,0.106500,2026-03-27 05:30:00,0.017000,14.900000,0.130000,0.035000,0.047000,0.340000,0.052000,0.074000
+iteration,composite,timestamp,description
+0,0.640941,2026-03-26 00:00:00,baseline - no changes
+1,0.619262,2026-03-26 00:10:00,steps_per_pattern 64->16
+2,0.611431,2026-03-26 00:20:00,step_ms 450->296 to match duration
+3,0.637437,2026-03-26 00:30:00,"reduce harmonics 7->4, steeper rolloff"
+4,0.584586,2026-03-26 00:40:00,decay_time 0.6->0.3 shorter percussive
+5,0.607533,2026-03-26 00:50:00,disable comb filter body resonance
+6,0.592873,2026-03-26 01:00:00,step_ms 296->260 faster tempo
+7,0.571688,2026-03-26 01:10:00,"flatten step velocities, less dynamic contrast"
+8,0.577248,2026-03-26 01:20:00,tone duration 0.9->0.4
+9,0.543404,2026-03-26 01:30:00,shift freqs +2 semitones C->D based
+10,0.559444,2026-03-26 01:40:00,"re-extract reference from 3:01, step_ms=281"
+11,0.533658,2026-03-26 01:50:00,reverb_wet 0.20->0.08
+12,0.552246,2026-03-26 02:00:00,FX_GAIN 0.35->0.55
+13,0.550115,2026-03-26 02:10:00,DELAY_WET 0.15->0.05
+14,0.507726,2026-03-26 02:20:00,RMS normalization to match reference loudness
+15,0.481486,2026-03-26 02:30:00,FX_GAIN 0.35->0.50
+16,0.505221,2026-03-26 02:40:00,FX_GAIN 0.50->0.70
+17,0.476399,2026-03-26 02:50:00,32 steps/pattern at 148ms for more onset density
+18,0.448314,2026-03-26 03:00:00,replace tanh with hard clip at 0.95
+19,0.485829,2026-03-26 03:10:00,peak normalize 0.95 instead of RMS
+20,0.450094,2026-03-26 03:20:00,RMS target 0.16 with clip 0.95
+21,0.452843,2026-03-26 03:30:00,reduce attack transient 0.35->0.15
+22,0.434793,2026-03-26 03:40:00,48 steps/pattern at 99ms
+23,0.396161,2026-03-26 03:50:00,64 steps/pattern at 74ms
+24,0.407686,2026-03-26 04:00:00,decay_time 0.3->0.15 even shorter
+25,0.378763,2026-03-26 04:10:00,decay_time 0.3->0.45 longer
+26,0.409405,2026-03-26 04:20:00,decay_time 0.45->0.6
+27,0.414000,2026-03-26 04:30:00,reduce saturation drive 1.08->1.02
+28,0.346563,2026-03-26 04:40:00,"E1: FX_GAIN 0.50->0.65, brighter harmonics"
+29,0.356813,2026-03-26 04:50:00,"E3: attack 0.35->0.55, saturation 1.08->1.20"
+30,0.334042,2026-03-26 05:00:00,E6: saturation drive 1.08->1.20 only
+31,0.321330,2026-03-26 05:10:00,"E7+E8: reverb 2.0->1.0s, FX_GAIN 0.65->0.75"
+32,0.344240,2026-03-26 05:20:00,RMS target 0.20->0.17 preserve dynamics
+33,0.343045,2026-03-26 05:30:00,E8: tune to D major
+34,0.290128,2026-03-26 05:40:00,E2: add high-freq boost +0.5 above 2kHz
+35,0.288615,2026-03-26 05:50:00,"stronger HF boost 1.0 at 1.5kHz, comb body"
+36,0.283391,2026-03-26 06:00:00,stronger HF boost 1.0 at 1.5kHz only
+37,0.256952,2026-03-26 06:10:00,"FX_GAIN 0.75->1.0, RMS target 0.20->0.25"
+38,0.283500,2026-03-26 06:20:00,"delay feedback 0.25->0.40, wet 0.15->0.25"
+39,0.267912,2026-03-26 06:30:00,HF boost 1.5x at 1.2kHz
+40,0.274945,2026-03-26 06:40:00,80 steps/pattern at 59ms
+41,0.264921,2026-03-26 06:50:00,soft knee limiter instead of hard clip
+42,0.247058,2026-03-26 07:00:00,"RMS 0.25->0.30, add harmonics 7-12"
+43,0.272264,2026-03-26 07:10:00,FX_GAIN 1.0->0.85 less clipping
+44,0.260011,2026-03-26 07:20:00,HF boost 1.5x at 1.5kHz + mid boost
+45,0.288570,2026-03-26 07:30:00,"add 5.5s leading silence, step_ms 74->70"
+46,0.262321,2026-03-26 07:40:00,"reverb dark 0.35->0.55, wet 0.08->0.12"
+47,0.261263,2026-03-26 07:50:00,adjust STEP_VELS for stronger accent pattern
+48,0.250123,2026-03-26 08:00:00,"remove clip, preserve natural dynamics"
+49,0.249258,2026-03-26 08:10:00,final manual verification
+50,0.208000,2026-03-26 09:00:00,CMA-ES run 1: block coordinate descent
+51,0.165000,2026-03-26 10:00:00,EM-guided optimization
+52,0.148000,2026-03-26 11:00:00,CMA-ES run 2
+53,0.134000,2026-03-26 12:00:00,CMA-ES run 3 + EQ parameterization
+54,0.117400,2026-03-26 13:00:00,Full-quality baseline (44100Hz)
+55,0.106500,2026-03-26 13:30:00,Full-quality CMA-ES block A partial
