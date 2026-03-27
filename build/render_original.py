@@ -79,7 +79,7 @@ PATTERNS = [
 
 # ── Effects config (matches original.js) ────────────────────────────────────
 
-FX_GAIN = 0.65
+FX_GAIN = 0.75
 FX_DELAY = 0.15
 FX_REVERB = 0.25
 
@@ -90,7 +90,7 @@ DELAY_DARK_LP = 3000
 DELAY_WET = 0.15
 
 REVERB_WET = 0.08
-REVERB_LENGTH = 2.0
+REVERB_LENGTH = 1.0
 REVERB_DARK = 0.35
 
 
