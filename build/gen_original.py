@@ -56,8 +56,8 @@ def gen_tone(freq, env_profile, sr=SR):
     body_exc = np.zeros(n)
     body_exc[:atk_n] = atk[:min(atk_n, len(atk))]
     delay = max(1, int(sr / freq))
-    body = comb_filter(body_exc, delay, feedback=0.6, lp_freq=min(freq * 3, sr / 2 - 100), sr=sr)
-    body *= 0.15
+    body = comb_filter(body_exc, delay, feedback=0.0, lp_freq=min(freq * 3, sr / 2 - 100), sr=sr)
+    body *= 0.0
 
     # Combine tonal + body
     sig = sig + body[:n]
@@ -70,10 +70,10 @@ def gen_tone(freq, env_profile, sr=SR):
     sig[:len(atk)] += atk[:min(len(atk), n)]
 
     # Gentle warmth — minimal asymmetric saturation
-    sig = asymmetric_saturate(sig, drive=1.20, asymmetry=0.05)
+    sig = asymmetric_saturate(sig, drive=2.0, asymmetry=0.05)
 
     # High-frequency boost to match reference brightness
-    sig_hp = highpass(sig, 1500, sr) * 1.0
+    sig_hp = highpass(sig, 1500, sr) * 2.0
     sig = sig + sig_hp
 
     sig = normalize(sig, 0.85)

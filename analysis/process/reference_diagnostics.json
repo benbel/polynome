@@ -1,0 +1,21 @@
+{
+  "raw_duration_s": 127.84,
+  "sample_rate": 44100,
+  "trim_start_s": 10.658,
+  "trim_end_s": 127.28,
+  "trimmed_duration_s": 116.62,
+  "first_onset_s": 0.035,
+  "noise_floor_rms": 9.5e-05,
+  "silence_gaps": [
+    {
+      "start_s": 87.4,
+      "end_s": 89.8,
+      "duration_s": 2.4
+    }
+  ],
+  "output_rms": 0.297,
+  "output_peak": 0.95,
+  "output_duration_s": 116.62,
+  "rms_envelope_mean": 0.2608,
+  "rms_envelope_std": 0.142
+}

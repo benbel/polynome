@@ -194,7 +194,7 @@ def apply_reference_envelope(mix, sr=SR):
 
     # Smooth the gain curve to avoid artifacts
     from scipy.ndimage import uniform_filter1d
-    gain_curve = uniform_filter1d(gain_curve, size=5)
+    gain_curve = uniform_filter1d(gain_curve, size=8)
     # Clip extreme gains
     gain_curve = np.clip(gain_curve, 0.1, 5.0)
 

@@ -124,8 +124,8 @@ def main():
     print(f'  Noise floor RMS: {noise_rms:.6f}')
     diagnostics['noise_floor_rms'] = round(float(noise_rms), 6)
 
-    print('Applying spectral gating...')
-    y = spectral_gate(y, sr, noise_rms, margin_db=6)
+    print('Applying spectral gating (aggressive)...')
+    y = spectral_gate(y, sr, noise_rms, margin_db=12)
 
     # Step 5: Detect mid-performance silence gaps
     frame_len = int(sr * 0.1)

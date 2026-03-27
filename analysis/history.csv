@@ -1,0 +1,29 @@
+iteration,composite_distance,description
+50,0.302843,fresh baseline with cleaned reference
+51,0.279488,"fix STEP_VELS to match AMXD: 127,36,64,36 pattern"
+52,0.381862,"fix pitches to match detected D major scale: 383,332,298,224,199,188,167,149 Hz"
+53,0.316829,"remap pitches to D major scale same octave: 587,440,392,330,294,220,196,147"
+54,0.283212,peak normalize + tanh soft clip + RMS target 0.26 for natural dynamics
+55,0.345702,"step_ms 74->70, COL_SEQS 8-15 all-1s, RMS target 0.26, saturation 1.20->1.08"
+56,0.368895,inferred patterns from Bayesian button press detection
+57,0.208139,reference-matched volume envelope + AMXD velocities
+58,0.373565,"steeper harmonic rolloff -6/-14/-20dB, reduce HF boost 1.0->0.3"
+59,0.254122,slightly steeper harmonic rolloff -4/-8/-13dB
+60,0.231999,reduce HF boost 1.0->0.7
+61,0.266767,darker reverb 0.35->0.55
+62,0.230198,"gentler envelope matching: 65% blend, min gain 0.3"
+63,0.283746,"envelope blend 80%, min gain 0.2"
+58,0.213266,target_rms 0.30->0.52 to fix energy mismatch
+59,0.235772,"brighter HF x2, reverb wet 0.18, reverb length 1.5, delay wet 0.25"
+60,0.1921,HF boost x2 only
+61,0.222958,HF boost x1.5
+62,0.202716,HF boost x2.5
+63,0.188766,HF boost x2 + ambient noise floor 0.008
+64,0.190815,HF boost x2 + ambient noise floor 0.015
+65,0.192,HF boost x2 + aggressive spectral gating on reference
+66,0.198953,"EM-optimized: drive 2.48, decay 0.72, no HF boost, no comb"
+67,0.184377,drive 1.20->2.48 only (EM suggestion)
+68,0.168194,drive 2.48 + no comb filter
+69,0.192398,drive 2.48 + no comb + decay 0.60
+70,0.164829,drive 2.0 + no comb + HF x2
+71,0.187642,drive 1.8 + no comb + HF x2
