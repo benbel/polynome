@@ -113,11 +113,11 @@ def adaptive_strategy(iteration, block_stats, best_composite):
     """
     # Every 5th iteration: joint optimization to escape local minima
     if iteration % 5 == 0 and iteration > 0:
-        return 'joint', ALL_BLOCKS, 300
+        return 'joint', ALL_BLOCKS, 150
 
     # Every 10th iteration: perturbation to explore new regions
     if iteration % 10 == 0 and iteration > 0:
-        return 'perturb', ALL_BLOCKS, 200
+        return 'perturb', ALL_BLOCKS, 100
 
     # Rank blocks by recent improvement
     block_improvements = {}
@@ -140,7 +140,7 @@ def adaptive_strategy(iteration, block_stats, best_composite):
 
     if n_improved == 0 and iteration > 2:
         # Nothing improved last round — do a full sweep with more budget
-        return 'blocks_full', sorted_blocks, 250
+        return 'blocks_full', sorted_blocks, 80
     else:
         # Focus on productive blocks, skip stagnant ones (but include all
         # every 3rd iteration to re-check)
@@ -153,8 +153,7 @@ def adaptive_strategy(iteration, block_stats, best_composite):
             if not block_order:
                 block_order = sorted_blocks  # fallback
 
-        # Adaptive budget: more budget for blocks that improve more
-        base_budget = 150
+        base_budget = 50
         return 'blocks_focused', block_order, base_budget
 
 
