@@ -20,7 +20,7 @@ DEFAULT_ENVELOPE = {
     'attack_ms': 1.5,
     'decay_time': 0.45,
     'harmonic_ratios': [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0],
-    'harmonic_amplitudes_db': [0, -4, -9, -14, -20, -26, -34],
+    'harmonic_amplitudes_db': [0, -3, -6, -10, -14, -18, -24],
     'inharmonicity_cents': [0, 6, -2, 10, -4, 5, -7],
 }
 
