@@ -79,7 +79,7 @@ PATTERNS = [
 
 # ── Effects config (matches original.js) ────────────────────────────────────
 
-FX_GAIN = 0.75
+FX_GAIN = 1.0
 FX_DELAY = 0.15
 FX_REVERB = 0.25
 
@@ -199,7 +199,7 @@ def render(steps_per_pattern=64, step_ms=450, sr=SR):
     # Normalize — target RMS to match reference loudness
     current_rms = np.sqrt(np.mean(mix ** 2))
     if current_rms > 0:
-        target_rms = 0.20
+        target_rms = 0.25
         gain = target_rms / current_rms
         mix *= gain
         mix = np.clip(mix, -0.95, 0.95)
