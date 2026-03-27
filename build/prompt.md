@@ -1,145 +1,72 @@
-# Original Mode Sound Matching — Iteration Guide
+# Sound Matching: Original Mode → Press Café Video
 
-## Goal
+## Context
 
-Match the sound of Polynome's "original" mode to the reference video
-(stretta's monome Press Café, starting at 2:55):
-https://www.youtube.com/watch?v=Su0i0kkfe5E&t=175
+The Polynome project has an "original" mode that replicates stretta's monome
+Press Café performance. The sound doesn't match the reference video yet.
 
-## Setup
+Reference video: https://www.youtube.com/watch?v=Su0i0kkfe5E (starting at 2:55)
 
-1. Place the reference audio as `analysis/reference.wav` (mono or stereo, any sample rate).
-   Extract from the video with:
+The reference audio has already been extracted to `analysis/reference.wav`.
+
+## What exists
+
+- `build/render_original.py` — Offline renderer that produces `analysis/rendered.wav`
+  by simulating the 26-pattern sequencer using tone synthesis from `gen_original.py`
+  and sequence config (`COL_SEQS`, `STEP_VELS`, step timing).
+- `build/compare_audio.py` — Computes 7 distance sub-metrics + weighted composite
+  between `analysis/reference.wav` and `analysis/rendered.wav`. Outputs
+  `analysis/distance.json` and appends to `analysis/history.csv`.
+- `build/iterate.sh N "description"` — Runs render then compare in one step.
+- `build/gen_original.py` — Tone synthesis (harmonics, envelope, comb filter, saturation).
+- `build/common.py` — DSP library.
+- `js/modes/original.js` — Runtime config: `COL_SEQS`, `STEP_VELS`, `mainFreqs`,
+  `defaultStepMs`, effects, patterns.
+
+## Your task
+
+Iteratively reduce the composite distance between the rendered output and the
+reference audio. Work in a loop:
+
+### For each iteration:
+
+1. **Render**: `python build/render_original.py`
+2. **Compare**: `python build/compare_audio.py --iteration N --description "what you changed"`
+3. **Read the JSON report** (`analysis/distance.json`). It contains:
+   - `spectral_centroid` (0–1): brightness mismatch → adjust harmonics in `gen_original.py`
+   - `spectral_rolloff` (0–1): high-freq energy → adjust saturation, comb filter
+   - `mfcc` (0–1): timbral shape → adjust envelope, harmonic structure
+   - `onset_density` (0–1): notes/sec ratio → adjust `--step-ms` in renderer
+   - `ioi_histogram` (0–1): rhythmic structure → adjust `COL_SEQS`
+   - `rms_correlation` (0–1): volume shape → adjust pattern order, `STEP_VELS`
+   - `pitch_class` (0–1): scale/tuning → adjust `DEFAULT_FREQS`/`mainFreqs`
+   - `composite`: weighted sum (lower = better)
+   - `diagnosis`: array of actionable suggestions
+4. **Make ONE targeted change** based on the diagnosis. Edit the relevant file:
+   - Timbre → `build/gen_original.py` (`DEFAULT_ENVELOPE`, `gen_tone()` function)
+   - Tempo → `--step-ms` flag, then `defaultStepMs` in `original.js`
+   - Rhythm → `COL_SEQS` in both `render_original.py` and `original.js` (keep in sync!)
+   - Velocity → `STEP_VELS` in both files (keep in sync!)
+   - Pitch → `DEFAULT_FREQS` in `gen_original.py` and `mainFreqs` in `original.js`
+5. **Re-render and re-compare**. If composite decreased, keep the change. If it
+   increased, revert and try something else.
+6. **Commit** after each successful iteration:
    ```
-   ffmpeg -ss 175 -t 180 -i <video_file> -vn -ar 44100 -ac 1 analysis/reference.wav
+   git commit -am "iteration N: <description> (composite: X.XXX → Y.YYY)"
    ```
 
-2. Install dependencies:
-   ```
-   pip install numpy scipy librosa soundfile
-   ```
+### Important rules:
 
-## File Layout
+- Change ONE parameter at a time so you can attribute metric changes.
+- Always keep `render_original.py` and `original.js` in sync for shared
+  constants (`COL_SEQS`, `STEP_VELS`, `DEFAULT_FREQS`/`mainFreqs`, step timing).
+- Start with iteration 0 as baseline (no changes, just render+compare).
+- Focus on the highest sub-metric first — that's the biggest gap.
+- The `diagnosis` array in the JSON output tells you what to do. Follow it.
+- Do NOT listen to the audio. Only use the numeric metrics to guide changes.
+- Stop when composite is below 0.15 or when 3 consecutive iterations fail to
+  improve it.
 
-```
-build/
-  render_original.py   — Offline sequencer: renders all 26 patterns to WAV
-  compare_audio.py     — Computes distance metrics between reference and rendered
-  iterate.sh           — Run one render+compare cycle
-  gen_original.py      — Tone synthesis (edit this to change timbre)
-  common.py            — DSP library
-js/modes/original.js   — Patterns, COL_SEQS, STEP_VELS, tempo, effects config
-analysis/
-  reference.wav        — Ground truth audio from the video (you provide this)
-  rendered.wav         — Latest render from the sequencer
-  distance.json        — Latest comparison report
-  history.csv          — Append-only log: iteration, composite_distance, description
-```
+### Start now:
 
-## Iteration Loop
-
-Each iteration follows this cycle:
-
-### 1. Render
-```bash
-python build/render_original.py
-```
-This produces `analysis/rendered.wav` by simulating the 26-pattern sequence
-using the current tone synthesis (`gen_original.py`) and sequencer config
-(`COL_SEQS`, `STEP_VELS`, `defaultStepMs` from `original.js`).
-
-### 2. Compare
-```bash
-python build/compare_audio.py --iteration N --description "what you changed"
-```
-This outputs `analysis/distance.json` with sub-metrics and a composite score,
-and appends a row to `analysis/history.csv`.
-
-### 3. Or run both at once
-```bash
-bash build/iterate.sh N "description of change"
-```
-
-### 4. Read the report
-The distance report contains:
-
-| Metric | What it means | What to tweak |
-|--------|--------------|---------------|
-| `spectral_centroid` | Brightness | Harmonics in `gen_original.py` |
-| `spectral_rolloff` | High-freq energy | Saturation, comb filter |
-| `mfcc` | Timbral envelope shape | Envelope params, harmonic structure |
-| `onset_density` | Notes per second | `defaultStepMs` in `original.js` |
-| `ioi_histogram` | Rhythmic pattern | `COL_SEQS` in `original.js` |
-| `rms_correlation` | Volume shape over time | Pattern order, `STEP_VELS` |
-| `pitch_class` | Scale/tuning match | `mainFreqs` in `original.js` |
-| `composite` | Weighted sum of all above | — |
-
-The `diagnosis` array suggests specific actions.
-
-### 5. Make a targeted change
-
-Based on the diagnosis, edit **one thing at a time**:
-
-- **Timbre too bright** → In `gen_original.py`: reduce number of harmonics,
-  lower `harmonic_amplitudes_db` for upper partials, remove comb filter,
-  reduce saturation `drive`.
-- **Envelope wrong** → In `gen_original.py`: change `decay_time` (shorter =
-  more percussive), `attack_ms`, sample `dur`.
-- **Tempo off** → In `render_original.py`: change `--step-ms` flag. Once
-  correct, update `defaultStepMs` in `original.js`.
-- **Rhythm wrong** → In `render_original.py` and `original.js`: edit `COL_SEQS`.
-- **Dynamics off** → In `render_original.py` and `original.js`: edit `STEP_VELS`.
-- **Pitches wrong** → In `gen_original.py` `DEFAULT_FREQS` and `original.js`
-  `mainFreqs`.
-
-### 6. Re-render, re-compare, check if composite decreased
-
-If composite decreased → commit with:
-```
-git add -A && git commit -m "iteration N: <description> (composite: X.XXX → Y.YYY)"
-```
-
-If composite increased → revert the change and try something else.
-
-## Metric Weights
-
-```
-spectral_centroid:  0.15
-mfcc:               0.25
-onset_density:      0.10
-ioi_histogram:      0.10
-rms_correlation:    0.15
-pitch_class:        0.10
-spectral_rolloff:   0.15
-```
-
-Timbre (centroid + mfcc + rolloff = 0.55) is weighted highest because it's
-likely the biggest difference — the current synthesis is a complex marimba-like
-tone, while the Press Café original may use a simpler waveform.
-
-## Key Files to Edit
-
-**For timbre changes** — `build/gen_original.py`:
-- `DEFAULT_ENVELOPE` dict: `harmonic_ratios`, `harmonic_amplitudes_db`,
-  `inharmonicity_cents`, `attack_ms`, `decay_time`
-- `gen_tone()` function: comb filter params, saturation params, sample duration
-
-**For sequence/rhythm/tempo changes** — `js/modes/original.js` AND
-`build/render_original.py` (keep them in sync!):
-- `COL_SEQS`: 16×16 binary array of column rhythms
-- `STEP_VELS`: 16-step velocity accent pattern
-- `defaultStepMs`: tempo
-
-**For pitch changes** — `build/gen_original.py` `DEFAULT_FREQS` AND
-`js/modes/original.js` `mainFreqs` (keep in sync!)
-
-## Notes
-
-- The renderer mirrors `engine.js` lines 408–444: for each step, check
-  `COL_SEQS[col][step % 16]`, apply `STEP_VELS[step % 16]`, mix sample.
-- Effects in the renderer (delay + reverb) approximate the browser's Web Audio
-  chain. They don't need to be perfect — focus on the dry signal first.
-- The comparison trims both files to the shorter duration before computing
-  metrics, so different lengths are fine.
-- Change one parameter at a time so you can attribute metric changes to
-  specific edits.
+Run iteration 0 as baseline, read the report, then begin improving.
