@@ -13,7 +13,7 @@ from common import (
     to_stereo, mix_stereo, export_ogg, write_manifest, generate_reverb_ir,
 )
 
-DEFAULT_FREQS = [523, 440, 370, 311, 262, 220, 175, 131]
+DEFAULT_FREQS = [587, 494, 415, 349, 294, 247, 196, 147]
 
 # Warm, woody tone — marimba-like with body resonance
 DEFAULT_ENVELOPE = {
