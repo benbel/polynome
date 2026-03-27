@@ -28,3 +28,4 @@ iteration,composite_distance,description
 70,0.164829,drive 2.0 + no comb + HF x2
 71,0.187642,drive 1.8 + no comb + HF x2
 72,0.148356,CMA-ES full optimizer run 1 applied
+73,0.133662,"CMA-ES run 2: step_ms=61.5, target_rms=0.37, new harmonics/synth"

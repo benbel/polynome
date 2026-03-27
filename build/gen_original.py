@@ -15,12 +15,12 @@ from common import (
 
 DEFAULT_FREQS = [448, 540, 585, 375, 322, 243, 239, 173]
 
-# EM-optimized tone (CMA-ES block coordinate descent, run 1)
+# CMA-ES optimized tone (block coordinate descent, runs 1-2)
 DEFAULT_ENVELOPE = {
-    'attack_ms': 0.79,
-    'decay_time': 0.099,
+    'attack_ms': 0.11,
+    'decay_time': 0.259,
     'harmonic_ratios': [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 10.0, 12.0],
-    'harmonic_amplitudes_db': [0, -1.4, -3.0, -15.9, -7.3, -18.7, -24.0, -22.9, -28.1, -49.9],
+    'harmonic_amplitudes_db': [0, -3.3, -0.1, -11.5, -17.9, -11.0, -29.8, -16.8, -30.0, -40.8],
     'inharmonicity_cents': [0, 6, -2, 10, -4, 5, -7, 8, -3, 6],
 }
 
@@ -37,7 +37,7 @@ def gen_tone(freq, env_profile, sr=SR):
     atk = noise(atk_dur, sr)
     atk = bandpass(atk, max(20, freq * 0.5), min(sr / 2 - 100, freq * 4), sr)
     atk_env = env_exp_decay(atk_dur, 0.2, 0.003, sr)
-    atk *= atk_env * 0.44
+    atk *= atk_env * 0.125
 
     # --- Tonal body: slightly detuned partials for warmth ---
     sig = np.zeros(n)
@@ -56,8 +56,8 @@ def gen_tone(freq, env_profile, sr=SR):
     body_exc = np.zeros(n)
     body_exc[:atk_n] = atk[:min(atk_n, len(atk))]
     delay = max(1, int(sr / freq))
-    body = comb_filter(body_exc, delay, feedback=0.068, lp_freq=min(freq * 3, sr / 2 - 100), sr=sr)
-    body *= 0.034
+    body = comb_filter(body_exc, delay, feedback=0.085, lp_freq=min(freq * 3, sr / 2 - 100), sr=sr)
+    body *= 0.138
 
     # Combine tonal + body
     sig = sig + body[:n]
@@ -70,10 +70,10 @@ def gen_tone(freq, env_profile, sr=SR):
     sig[:len(atk)] += atk[:min(len(atk), n)]
 
     # Gentle warmth — minimal asymmetric saturation
-    sig = asymmetric_saturate(sig, drive=2.00, asymmetry=0.061)
+    sig = asymmetric_saturate(sig, drive=1.37, asymmetry=0.080)
 
     # High-frequency boost to match reference brightness
-    sig_hp = highpass(sig, 1500, sr) * 2.40
+    sig_hp = highpass(sig, 1500, sr) * 2.78
     sig = sig + sig_hp
 
     sig = normalize(sig, 0.85)

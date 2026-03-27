@@ -81,36 +81,36 @@ def get_reference_envelope(sr):
 # ══════════════════════════════════════════════════════════════════════════════
 
 PARAM_SPEC = [
-    # Synthesis params (run 1 optimized defaults)
-    ('attack_ms',       0.79,   0.1,   15.0),
-    ('decay_time',      0.099,  0.02,   1.5),
-    ('drive',           2.00,   1.0,    4.0),
-    ('asymmetry',       0.061,  0.0,    0.3),
-    ('hf_boost',        2.40,   0.0,    5.0),
-    ('comb_feedback',   0.068,  0.0,    0.95),
-    ('comb_mix',        0.034,  0.0,    0.5),
-    ('attack_level',    0.44,   0.0,    1.0),
-    # Harmonic amplitudes (dB relative to fundamental)
-    ('harm_1_db',       -1.4,  -30.0,   0.0),
-    ('harm_2_db',       -3.0,  -30.0,   0.0),
-    ('harm_3_db',      -15.9,  -40.0,   0.0),
-    ('harm_4_db',       -7.3,  -40.0,   0.0),
-    ('harm_5_db',      -18.7,  -40.0,   0.0),
-    ('harm_6_db',      -24.0,  -50.0,   0.0),
-    ('harm_7_db',      -22.9,  -50.0,   0.0),
-    ('harm_8_db',      -28.1,  -60.0,   0.0),
-    ('harm_9_db',      -49.9,  -60.0,   0.0),
-    # Effects
+    # Synthesis params (run 2 optimized)
+    ('attack_ms',       0.11,   0.05,  15.0),
+    ('decay_time',      0.259,  0.02,   1.5),
+    ('drive',           1.37,   1.0,    4.0),
+    ('asymmetry',       0.080,  0.0,    0.3),
+    ('hf_boost',        2.78,   0.0,    5.0),
+    ('comb_feedback',   0.085,  0.0,    0.95),
+    ('comb_mix',        0.138,  0.0,    0.5),
+    ('attack_level',    0.125,  0.0,    1.0),
+    # Harmonic amplitudes (run 2 optimized)
+    ('harm_1_db',       -3.3,  -30.0,   0.0),
+    ('harm_2_db',       -0.1,  -30.0,   0.0),
+    ('harm_3_db',      -11.5,  -40.0,   0.0),
+    ('harm_4_db',      -17.9,  -40.0,   0.0),
+    ('harm_5_db',      -11.0,  -40.0,   0.0),
+    ('harm_6_db',      -29.8,  -50.0,   0.0),
+    ('harm_7_db',      -16.8,  -50.0,   0.0),
+    ('harm_8_db',      -30.0,  -60.0,   0.0),
+    ('harm_9_db',      -40.8,  -60.0,   0.0),
+    # Effects (run 2 kept run 1 values)
     ('reverb_wet',      0.118,  0.0,    0.5),
     ('reverb_length',   1.75,   0.2,    3.0),
     ('reverb_dark',     0.371,  0.0,    0.9),
     ('delay_wet',       0.087,  0.0,    0.5),
     ('delay_feedback',  0.067,  0.0,    0.7),
     ('delay_dark_lp',   1502,   500,   8000),
-    # Timing & level
-    ('step_ms',         74.0,   50.0,  120.0),
-    ('target_rms',      0.30,   0.10,   0.60),
-    # Frequencies (8 rows — run 1 optimized)
+    # Timing & level (run 2 optimized)
+    ('step_ms',         61.5,   50.0,  120.0),
+    ('target_rms',      0.37,   0.10,   0.60),
+    # Frequencies (run 1/2 optimized, kept)
     ('freq_0',          448,    200,    800),
     ('freq_1',          540,    150,    800),
     ('freq_2',          585,    200,    800),
@@ -242,12 +242,14 @@ def render_with_params(x, patterns, fast=False):
                     mix[offset:end, 1] += sample[:length] * vol
             global_step += 1
 
-    # Delay (simplified for speed in fast mode)
-    if not fast:
-        mix = apply_delay(mix, p, sr)
+    # Delay (vectorized for fast mode)
+    mix = apply_delay(mix, p, sr)
 
-    # Reverb
+    # Reverb (deterministic seed for reproducibility)
+    rng_state = np.random.get_state()
+    np.random.seed(42)
     ir = generate_reverb_ir(p['reverb_length'], dark=p['reverb_dark'], sr=sr)
+    np.random.set_state(rng_state)
     for ch in range(2):
         wet = fftconvolve(mix[:, ch], ir[:, ch])[:mix.shape[0]]
         mix[:, ch] += wet * p['reverb_wet']
@@ -611,6 +613,70 @@ def optimize_block_cmaes(block_name, x_full, patterns, y_ref_compare, budget=200
     return best_x_full[0], best_composite[0], eval_count[0]
 
 
+def optimize_joint_cmaes(x_full, patterns, y_ref_compare, budget=500):
+    """Optimize ALL parameters jointly using CMA-ES.
+
+    Uses larger population and sigma for broad exploration.
+    Returns (improved_x_full, best_composite, n_evals).
+    """
+    n = len(x_full)
+    lowers = np.array([b[0] for b in PARAM_BOUNDS])
+    uppers = np.array([b[1] for b in PARAM_BOUNDS])
+    ranges = uppers - lowers
+
+    def to_unit(x):
+        return (x - lowers) / ranges
+
+    def from_unit(u):
+        return u * ranges + lowers
+
+    u0 = to_unit(x_full)
+    eval_count = [0]
+    best_composite = [float('inf')]
+    best_x = [x_full.copy()]
+
+    def objective(u):
+        eval_count[0] += 1
+        x = from_unit(np.clip(u, 0, 1))
+        try:
+            y_ren = render_with_params(x, patterns, fast=True)
+            composite, _ = compute_composite(y_ren, y_ref_compare)
+            if composite < best_composite[0]:
+                best_composite[0] = composite
+                best_x[0] = x.copy()
+                print(f"      [JOINT] eval {eval_count[0]:4d}: "
+                      f"{composite:.4f} (new best)")
+            return composite
+        except Exception as e:
+            return 1.0
+
+    popsize = max(20, 2 * n)  # larger population for 34 dims
+    maxiter = max(15, budget // popsize)
+
+    opts = {
+        'popsize': popsize,
+        'maxiter': maxiter,
+        'maxfevals': budget,
+        'bounds': [0, 1],
+        'tolfun': 1e-5,
+        'tolx': 1e-5,
+        'verbose': -9,
+        'seed': int(time.time()) % 2**31,
+        'CMA_active': True,  # active CMA for faster convergence
+    }
+
+    try:
+        es = cma.CMAEvolutionStrategy(u0.tolist(), 0.08, opts)
+        while not es.stop():
+            solutions = es.ask()
+            fitnesses = [objective(np.array(s)) for s in solutions]
+            es.tell(solutions, fitnesses)
+    except Exception as e:
+        print(f"      [JOINT] CMA-ES error: {e}")
+
+    return best_x[0], best_composite[0], eval_count[0]
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Main optimization loop
 # ══════════════════════════════════════════════════════════════════════════════
@@ -625,6 +691,8 @@ def main():
                         help='Max evaluations per block per M-step')
     parser.add_argument('--blocks', nargs='*', default=None,
                         help='Specific blocks to optimize (default: all)')
+    parser.add_argument('--joint', action='store_true',
+                        help='Optimize all params jointly instead of block-by-block')
     parser.add_argument('--skip-estep', action='store_true',
                         help='Skip E-step (pattern inference)')
     args = parser.parse_args()
@@ -708,50 +776,79 @@ def main():
             else:
                 print("  No patterns inferred, keeping current")
 
-        # ── M-step: Block coordinate descent with CMA-ES ─────────────────
-        print(f"\n[M-step] Block coordinate descent ({len(block_order)} blocks, "
-              f"budget={args.budget}/block)")
-
-        for block_name in block_order:
-            indices = get_block_indices(block_name)
-            n_params = len(indices)
-            param_names = [PARAM_NAMES[i] for i in indices]
-            print(f"\n  Block {block_name} ({n_params} params: "
-                  f"{', '.join(param_names[:4])}{'...' if n_params > 4 else ''})")
+        # ── M-step ─────────────────────────────────────────────────────────
+        if args.joint:
+            print(f"\n[M-step] Joint CMA-ES optimization "
+                  f"({len(PARAM_SPEC)} params, budget={args.budget})")
 
             x_before = x.copy()
             c_before = best_composite
 
-            x_improved, c_improved, n_evals = optimize_block_cmaes(
-                block_name, x, patterns, y_ref_compare,
-                budget=args.budget)
+            x_improved, c_improved, n_evals = optimize_joint_cmaes(
+                x, patterns, y_ref_compare, budget=args.budget)
 
             if c_improved < c_before:
-                improvement = c_before - c_improved
                 x = x_improved
                 best_composite = c_improved
                 best_x = x.copy()
                 best_patterns = patterns
 
-                # Show what changed
                 changed = []
-                for idx in indices:
-                    name = PARAM_NAMES[idx]
-                    old = x_before[idx]
-                    new = x[idx]
-                    if abs(new - old) > 0.001:
-                        changed.append(f"{name}: {old:.3f}->{new:.3f}")
+                for i, (name, _, _, _) in enumerate(PARAM_SPEC):
+                    if abs(x[i] - x_before[i]) > 0.001:
+                        changed.append(f"{name}: {x_before[i]:.3f}->{x[i]:.3f}")
                 print(f"    -> Improved {c_before:.4f} -> {c_improved:.4f} "
-                      f"(delta={improvement:.4f}, {n_evals} evals)")
-                if changed:
-                    for c in changed:
-                        print(f"       {c}")
+                      f"(delta={c_before - c_improved:.4f}, {n_evals} evals)")
+                for c in changed[:10]:
+                    print(f"       {c}")
+                if len(changed) > 10:
+                    print(f"       ... and {len(changed)-10} more")
             else:
-                x = x_before  # revert
-                print(f"    -> No improvement ({n_evals} evals), reverting")
+                x = x_before
+                print(f"    -> No improvement ({n_evals} evals)")
+        else:
+            print(f"\n[M-step] Block coordinate descent ({len(block_order)} blocks, "
+                  f"budget={args.budget}/block)")
 
-        # End of M-step cycle summary
-        print(f"\n  M-step cycle complete. Best composite: {best_composite:.4f}")
+            for block_name in block_order:
+                indices = get_block_indices(block_name)
+                n_params = len(indices)
+                param_names = [PARAM_NAMES[i] for i in indices]
+                print(f"\n  Block {block_name} ({n_params} params: "
+                      f"{', '.join(param_names[:4])}{'...' if n_params > 4 else ''})")
+
+                x_before = x.copy()
+                c_before = best_composite
+
+                x_improved, c_improved, n_evals = optimize_block_cmaes(
+                    block_name, x, patterns, y_ref_compare,
+                    budget=args.budget)
+
+                if c_improved < c_before:
+                    improvement = c_before - c_improved
+                    x = x_improved
+                    best_composite = c_improved
+                    best_x = x.copy()
+                    best_patterns = patterns
+
+                    changed = []
+                    for idx in indices:
+                        name = PARAM_NAMES[idx]
+                        old = x_before[idx]
+                        new = x[idx]
+                        if abs(new - old) > 0.001:
+                            changed.append(f"{name}: {old:.3f}->{new:.3f}")
+                    print(f"    -> Improved {c_before:.4f} -> {c_improved:.4f} "
+                          f"(delta={improvement:.4f}, {n_evals} evals)")
+                    if changed:
+                        for c in changed:
+                            print(f"       {c}")
+                else:
+                    x = x_before
+                    print(f"    -> No improvement ({n_evals} evals), reverting")
+
+        # End of M-step summary
+        print(f"\n  M-step complete. Best composite: {best_composite:.4f}")
 
     # ── Final evaluation at full quality ──────────────────────────────────
     print(f"\n{'='*70}")
