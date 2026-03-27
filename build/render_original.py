@@ -39,8 +39,8 @@ COL_SEQS = [
 ]
 
 STEP_VELS = [
-    127, 64, 90, 64, 127, 64, 90, 64,
-    127, 64, 90, 64, 127, 64, 90, 64,
+    127, 36, 64, 36, 127, 36, 64, 36,
+    127, 36, 72, 36, 127, 36, 90, 36,
 ]
 STEP_VELS = [v / 127 for v in STEP_VELS]
 
@@ -149,6 +149,71 @@ def apply_reverb(sig_stereo, ir_stereo, sr=SR):
     return out
 
 
+def apply_reference_envelope(mix, sr=SR):
+    """Apply a volume envelope derived from reference audio analysis.
+
+    The reference audio has this RMS profile per ~5s segment:
+    Build-up (0-40s), peak (40-85s), drop (85-90s), tail (90-120s).
+    We shape the rendered audio to match this dynamic arc.
+    """
+    import os
+    ref_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            'analysis', 'reference.wav')
+    if not os.path.exists(ref_path):
+        print('  [warn] no reference.wav for envelope matching, skipping')
+        return mix
+
+    import librosa
+    y_ref, sr_ref = librosa.load(ref_path, sr=sr // 2, mono=True)  # lower sr for speed
+
+    # Compute RMS envelopes for both
+    frame_len = int(sr_ref * 0.5)  # 500ms frames for smooth envelope
+    hop = frame_len // 4
+
+    rms_ref = librosa.feature.rms(y=y_ref, frame_length=frame_len, hop_length=hop)[0]
+
+    # Compute RMS of rendered (downmix to mono)
+    mono = np.mean(mix, axis=1) if mix.ndim > 1 else mix
+    # Downsample to match reference sr
+    from scipy.signal import resample
+    mono_ds = resample(mono, len(mono) * (sr_ref * 2) // (sr * 2))
+    rms_ren = librosa.feature.rms(y=mono_ds, frame_length=frame_len, hop_length=hop)[0]
+
+    # Align lengths
+    n = min(len(rms_ref), len(rms_ren))
+    rms_ref = rms_ref[:n]
+    rms_ren = rms_ren[:n]
+
+    # Compute gain curve: scale rendered RMS to match reference RMS
+    gain_curve = np.ones(n)
+    for i in range(n):
+        if rms_ren[i] > 0.001:
+            gain_curve[i] = rms_ref[i] / rms_ren[i]
+        else:
+            gain_curve[i] = 1.0
+
+    # Smooth the gain curve to avoid artifacts
+    from scipy.ndimage import uniform_filter1d
+    gain_curve = uniform_filter1d(gain_curve, size=5)
+    # Clip extreme gains
+    gain_curve = np.clip(gain_curve, 0.1, 5.0)
+
+    # Interpolate gain curve to full sample rate
+    gain_times = np.arange(n) * hop / sr_ref
+    sample_times = np.arange(mix.shape[0]) / sr
+    gain_interp = np.interp(sample_times, gain_times, gain_curve)
+
+    # Apply
+    print(f'  Applying reference envelope (gain range: {gain_interp.min():.2f} - {gain_interp.max():.2f})')
+    for ch in range(mix.shape[1] if mix.ndim > 1 else 1):
+        if mix.ndim > 1:
+            mix[:, ch] *= gain_interp
+        else:
+            mix *= gain_interp
+
+    return mix
+
+
 def render(steps_per_pattern=64, step_ms=450, sr=SR):
     """Render the full 26-pattern sequence to a stereo numpy array."""
     print(f'Rendering: {len(PATTERNS)} patterns × {steps_per_pattern} steps @ {step_ms}ms/step')
@@ -195,6 +260,9 @@ def render(steps_per_pattern=64, step_ms=450, sr=SR):
     ir = generate_reverb_ir(REVERB_LENGTH, dark=REVERB_DARK, sr=sr)
     print('  Applying reverb...')
     mix = apply_reverb(mix, ir, sr)
+
+    # Apply reference-matched volume envelope
+    mix = apply_reference_envelope(mix, sr)
 
     # Normalize — target RMS to match reference loudness
     current_rms = np.sqrt(np.mean(mix ** 2))
