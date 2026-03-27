@@ -1,0 +1,601 @@
+{
+  "onsets": {
+    "onset_count": 480,
+    "duration_s": 116.55,
+    "ioi_mean_ms": 243.3,
+    "ioi_median_ms": 243.8,
+    "ioi_std_ms": 192.3,
+    "ioi_min_ms": 104.5,
+    "ioi_max_ms": 2832.8,
+    "modal_ioi_ms": 128.0,
+    "top_ioi_peaks_ms": [
+      118.4,
+      128.0,
+      243.2,
+      257.6,
+      276.8
+    ],
+    "ioi_histogram_top10": [
+      {
+        "center_ms": 128.0,
+        "count": 98
+      },
+      {
+        "center_ms": 243.2,
+        "count": 94
+      },
+      {
+        "center_ms": 257.6,
+        "count": 78
+      },
+      {
+        "center_ms": 118.4,
+        "count": 34
+      },
+      {
+        "center_ms": 276.8,
+        "count": 22
+      },
+      {
+        "center_ms": 219.2,
+        "count": 22
+      },
+      {
+        "center_ms": 137.6,
+        "count": 21
+      },
+      {
+        "center_ms": 291.2,
+        "count": 13
+      },
+      {
+        "center_ms": 334.4,
+        "count": 10
+      },
+      {
+        "center_ms": 209.6,
+        "count": 10
+      }
+    ],
+    "local_windows": [
+      {
+        "window_s": 0.0,
+        "onset_count": 39,
+        "mean_ioi_ms": 257.6,
+        "median_ioi_ms": 243.8,
+        "density_per_s": 3.9
+      },
+      {
+        "window_s": 10.0,
+        "onset_count": 42,
+        "mean_ioi_ms": 238.7,
+        "median_ioi_ms": 220.6,
+        "density_per_s": 4.2
+      },
+      {
+        "window_s": 20.0,
+        "onset_count": 39,
+        "mean_ioi_ms": 256.9,
+        "median_ioi_ms": 249.6,
+        "density_per_s": 3.9
+      },
+      {
+        "window_s": 30.0,
+        "onset_count": 42,
+        "mean_ioi_ms": 238.1,
+        "median_ioi_ms": 255.4,
+        "density_per_s": 4.2
+      },
+      {
+        "window_s": 40.0,
+        "onset_count": 55,
+        "mean_ioi_ms": 180.8,
+        "median_ioi_ms": 139.3,
+        "density_per_s": 5.5
+      },
+      {
+        "window_s": 50.0,
+        "onset_count": 55,
+        "mean_ioi_ms": 180.6,
+        "median_ioi_ms": 127.7,
+        "density_per_s": 5.5
+      },
+      {
+        "window_s": 60.0,
+        "onset_count": 53,
+        "mean_ioi_ms": 185.3,
+        "median_ioi_ms": 133.5,
+        "density_per_s": 5.3
+      },
+      {
+        "window_s": 70.0,
+        "onset_count": 55,
+        "mean_ioi_ms": 180.6,
+        "median_ioi_ms": 127.7,
+        "density_per_s": 5.5
+      },
+      {
+        "window_s": 80.0,
+        "onset_count": 37,
+        "mean_ioi_ms": 273.5,
+        "median_ioi_ms": 191.6,
+        "density_per_s": 3.7
+      },
+      {
+        "window_s": 90.0,
+        "onset_count": 25,
+        "mean_ioi_ms": 410.2,
+        "median_ioi_ms": 336.7,
+        "density_per_s": 2.5
+      },
+      {
+        "window_s": 100.0,
+        "onset_count": 24,
+        "mean_ioi_ms": 420.0,
+        "median_ioi_ms": 336.7,
+        "density_per_s": 2.4
+      },
+      {
+        "window_s": 110.0,
+        "onset_count": 14,
+        "mean_ioi_ms": 474.2,
+        "median_ioi_ms": 336.7,
+        "density_per_s": 1.4
+      }
+    ]
+  },
+  "rms_segments": {
+    "step_ms": 74,
+    "steps_per_pattern": 64,
+    "pattern_duration_s": 4.736,
+    "n_segments": 24,
+    "segments": [
+      {
+        "pattern_idx": 0,
+        "start_s": 0.0,
+        "rms": 0.1538,
+        "peak": 0.95,
+        "onset_count": 18
+      },
+      {
+        "pattern_idx": 1,
+        "start_s": 4.74,
+        "rms": 0.1919,
+        "peak": 0.95,
+        "onset_count": 29
+      },
+      {
+        "pattern_idx": 2,
+        "start_s": 9.47,
+        "rms": 0.193,
+        "peak": 0.95,
+        "onset_count": 24
+      },
+      {
+        "pattern_idx": 3,
+        "start_s": 14.21,
+        "rms": 0.2231,
+        "peak": 0.95,
+        "onset_count": 26
+      },
+      {
+        "pattern_idx": 4,
+        "start_s": 18.94,
+        "rms": 0.2101,
+        "peak": 0.95,
+        "onset_count": 18
+      },
+      {
+        "pattern_idx": 5,
+        "start_s": 23.68,
+        "rms": 0.2796,
+        "peak": 0.95,
+        "onset_count": 34
+      },
+      {
+        "pattern_idx": 6,
+        "start_s": 28.42,
+        "rms": 0.26,
+        "peak": 0.95,
+        "onset_count": 22
+      },
+      {
+        "pattern_idx": 7,
+        "start_s": 33.15,
+        "rms": 0.3067,
+        "peak": 0.95,
+        "onset_count": 35
+      },
+      {
+        "pattern_idx": 8,
+        "start_s": 37.89,
+        "rms": 0.3125,
+        "peak": 0.95,
+        "onset_count": 37
+      },
+      {
+        "pattern_idx": 9,
+        "start_s": 42.62,
+        "rms": 0.4295,
+        "peak": 0.95,
+        "onset_count": 34
+      },
+      {
+        "pattern_idx": 10,
+        "start_s": 47.36,
+        "rms": 0.3977,
+        "peak": 0.95,
+        "onset_count": 35
+      },
+      {
+        "pattern_idx": 11,
+        "start_s": 52.1,
+        "rms": 0.3898,
+        "peak": 0.95,
+        "onset_count": 39
+      },
+      {
+        "pattern_idx": 12,
+        "start_s": 56.83,
+        "rms": 0.3986,
+        "peak": 0.95,
+        "onset_count": 38
+      },
+      {
+        "pattern_idx": 13,
+        "start_s": 61.57,
+        "rms": 0.4055,
+        "peak": 0.95,
+        "onset_count": 34
+      },
+      {
+        "pattern_idx": 14,
+        "start_s": 66.3,
+        "rms": 0.3635,
+        "peak": 0.95,
+        "onset_count": 39
+      },
+      {
+        "pattern_idx": 15,
+        "start_s": 71.04,
+        "rms": 0.359,
+        "peak": 0.95,
+        "onset_count": 35
+      },
+      {
+        "pattern_idx": 16,
+        "start_s": 75.78,
+        "rms": 0.3727,
+        "peak": 0.95,
+        "onset_count": 36
+      },
+      {
+        "pattern_idx": 17,
+        "start_s": 80.51,
+        "rms": 0.3699,
+        "peak": 0.95,
+        "onset_count": 36
+      },
+      {
+        "pattern_idx": 18,
+        "start_s": 85.25,
+        "rms": 0.179,
+        "peak": 0.95,
+        "onset_count": 23
+      },
+      {
+        "pattern_idx": 19,
+        "start_s": 89.98,
+        "rms": 0.145,
+        "peak": 0.95,
+        "onset_count": 29
+      },
+      {
+        "pattern_idx": 20,
+        "start_s": 94.72,
+        "rms": 0.2335,
+        "peak": 0.95,
+        "onset_count": 33
+      },
+      {
+        "pattern_idx": 21,
+        "start_s": 99.46,
+        "rms": 0.2447,
+        "peak": 0.95,
+        "onset_count": 27
+      },
+      {
+        "pattern_idx": 22,
+        "start_s": 104.19,
+        "rms": 0.2264,
+        "peak": 0.95,
+        "onset_count": 25
+      },
+      {
+        "pattern_idx": 23,
+        "start_s": 108.93,
+        "rms": 0.243,
+        "peak": 0.95,
+        "onset_count": 26
+      }
+    ]
+  },
+  "pitches": {
+    "n_pitches_detected": 192,
+    "n_clusters": 10,
+    "silhouette_score": 0.949,
+    "cluster_centers_hz": [
+      75.1,
+      103.0,
+      149.1,
+      167.2,
+      187.7,
+      199.1,
+      223.6,
+      298.0,
+      332.2,
+      382.8
+    ],
+    "cluster_notes": [
+      "D2 (+40c)",
+      "G#2 (-13c)",
+      "D3 (+27c)",
+      "E3 (+25c)",
+      "F#3 (+25c)",
+      "G3 (+27c)",
+      "A3 (+28c)",
+      "D4 (+26c)",
+      "E4 (+13c)",
+      "G4 (-41c)"
+    ],
+    "cluster_counts": {
+      "75.1": 40,
+      "103.0": 17,
+      "149.1": 19,
+      "167.2": 14,
+      "187.7": 9,
+      "199.1": 17,
+      "223.6": 48,
+      "298.0": 3,
+      "332.2": 10,
+      "382.8": 15
+    },
+    "comparison": {
+      "amxd_freqs": [
+        261.6,
+        246.9,
+        220.0,
+        196.0,
+        174.6,
+        164.8,
+        146.8,
+        130.8
+      ],
+      "current_freqs": [
+        587,
+        494,
+        415,
+        349,
+        294,
+        247,
+        196,
+        147
+      ],
+      "detected_freqs": [
+        75.1,
+        103.0,
+        149.1,
+        167.2,
+        187.7,
+        199.1,
+        223.6,
+        298.0,
+        332.2,
+        382.8
+      ]
+    }
+  },
+  "density": {
+    "total_onsets": 480,
+    "n_windows": 24,
+    "windows": [
+      {
+        "segment": 0,
+        "start_s": 0.0,
+        "onset_count": 18,
+        "density_per_s": 3.8
+      },
+      {
+        "segment": 1,
+        "start_s": 4.74,
+        "onset_count": 19,
+        "density_per_s": 4.0
+      },
+      {
+        "segment": 2,
+        "start_s": 9.47,
+        "onset_count": 20,
+        "density_per_s": 4.2
+      },
+      {
+        "segment": 3,
+        "start_s": 14.21,
+        "onset_count": 19,
+        "density_per_s": 4.0
+      },
+      {
+        "segment": 4,
+        "start_s": 18.94,
+        "onset_count": 18,
+        "density_per_s": 3.8
+      },
+      {
+        "segment": 5,
+        "start_s": 23.68,
+        "onset_count": 20,
+        "density_per_s": 4.2
+      },
+      {
+        "segment": 6,
+        "start_s": 28.42,
+        "onset_count": 20,
+        "density_per_s": 4.2
+      },
+      {
+        "segment": 7,
+        "start_s": 33.15,
+        "onset_count": 19,
+        "density_per_s": 4.0
+      },
+      {
+        "segment": 8,
+        "start_s": 37.89,
+        "onset_count": 22,
+        "density_per_s": 4.6
+      },
+      {
+        "segment": 9,
+        "start_s": 42.62,
+        "onset_count": 27,
+        "density_per_s": 5.7
+      },
+      {
+        "segment": 10,
+        "start_s": 47.36,
+        "onset_count": 27,
+        "density_per_s": 5.7
+      },
+      {
+        "segment": 11,
+        "start_s": 52.1,
+        "onset_count": 28,
+        "density_per_s": 5.9
+      },
+      {
+        "segment": 12,
+        "start_s": 56.83,
+        "onset_count": 25,
+        "density_per_s": 5.3
+      },
+      {
+        "segment": 13,
+        "start_s": 61.57,
+        "onset_count": 24,
+        "density_per_s": 5.1
+      },
+      {
+        "segment": 14,
+        "start_s": 66.3,
+        "onset_count": 25,
+        "density_per_s": 5.3
+      },
+      {
+        "segment": 15,
+        "start_s": 71.04,
+        "onset_count": 27,
+        "density_per_s": 5.7
+      },
+      {
+        "segment": 16,
+        "start_s": 75.78,
+        "onset_count": 25,
+        "density_per_s": 5.3
+      },
+      {
+        "segment": 17,
+        "start_s": 80.51,
+        "onset_count": 26,
+        "density_per_s": 5.5
+      },
+      {
+        "segment": 18,
+        "start_s": 85.25,
+        "onset_count": 8,
+        "density_per_s": 1.7
+      },
+      {
+        "segment": 19,
+        "start_s": 89.98,
+        "onset_count": 15,
+        "density_per_s": 3.2
+      },
+      {
+        "segment": 20,
+        "start_s": 94.72,
+        "onset_count": 9,
+        "density_per_s": 1.9
+      },
+      {
+        "segment": 21,
+        "start_s": 99.46,
+        "onset_count": 11,
+        "density_per_s": 2.3
+      },
+      {
+        "segment": 22,
+        "start_s": 104.19,
+        "onset_count": 12,
+        "density_per_s": 2.5
+      },
+      {
+        "segment": 23,
+        "start_s": 108.93,
+        "onset_count": 11,
+        "density_per_s": 2.3
+      }
+    ]
+  },
+  "spectral": {
+    "dominant_freqs": [
+      {
+        "hz": 301.5,
+        "magnitude": 86.8057
+      },
+      {
+        "hz": 452.2,
+        "magnitude": 86.6781
+      },
+      {
+        "hz": 441.4,
+        "magnitude": 86.3771
+      },
+      {
+        "hz": 290.7,
+        "magnitude": 71.7987
+      },
+      {
+        "hz": 398.4,
+        "magnitude": 68.7406
+      },
+      {
+        "hz": 376.8,
+        "magnitude": 63.828
+      },
+      {
+        "hz": 387.6,
+        "magnitude": 61.5034
+      },
+      {
+        "hz": 333.8,
+        "magnitude": 60.67
+      },
+      {
+        "hz": 592.2,
+        "magnitude": 49.2712
+      },
+      {
+        "hz": 323.0,
+        "magnitude": 46.6016
+      }
+    ],
+    "band_energy_ratios": {
+      "sub_bass_20_60": 0.0004,
+      "bass_60_250": 0.1019,
+      "low_mid_250_500": 0.591,
+      "mid_500_2000": 0.2299,
+      "upper_mid_2000_4000": 0.0507,
+      "presence_4000_8000": 0.0202,
+      "brilliance_8000_12000": 0.0055
+    }
+  }
+}
