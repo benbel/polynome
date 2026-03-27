@@ -269,17 +269,28 @@ def render_with_params(x, patterns, fast=False):
     # Dry mix (stereo)
     mix = np.zeros((total_samples, 2))
 
+    # Track per-row activation step (button press = start of pattern for that row)
+    # Each row's sequence phase starts from 0 when it first appears
+    row_start_step = {}  # row -> global_step when first activated
+
     global_step = 0
     for pi, pattern in enumerate(patterns):
+        # Detect newly activated rows at pattern boundary
+        pattern_start = global_step
+        for (row, col), vel in pattern.items():
+            if row not in row_start_step:
+                row_start_step[row] = pattern_start
+
         for local_step in range(STEPS_PER_PATTERN):
-            seq_idx = global_step % SEQ_LEN
             offset = global_step * step_samples
 
             for (row, col), vel in pattern.items():
+                # Per-row sequence index: phase starts from 0 when row was activated
+                row_seq_idx = (global_step - row_start_step[row]) % SEQ_LEN
                 # COL_SEQS model: each column has a 16-step rhythm pattern
                 # Cell (row, col) means row plays column's rhythm sequence
-                if col < len(COL_SEQS) and COL_SEQS[col][seq_idx]:
-                    vol = vel * STEP_VELS[seq_idx]
+                if col < len(COL_SEQS) and COL_SEQS[col][row_seq_idx]:
+                    vol = vel * STEP_VELS[row_seq_idx]
                     sample = samples[row]
                     end = min(offset + len(sample), total_samples)
                     length = end - offset
@@ -554,7 +565,6 @@ def infer_buttons(y_ref, sr, freqs, step_ms):
             'row': best_row,
             'time_s': float(onset_time),
             'global_step': global_step,
-            'seq_idx': global_step % SEQ_LEN,
             'pattern_idx': global_step // STEPS_PER_PATTERN,
         })
 
@@ -570,28 +580,35 @@ def infer_buttons(y_ref, sr, freqs, step_ms):
             patterns_events[event['pattern_idx']].append(event)
 
     # Infer active cells per pattern
+    # Key insight: each row's sequence phase starts when it's first activated,
+    # NOT from a global clock. So we must try all possible phase offsets.
     inferred = []
     cumulative_cells = set()
+    row_start_step = {}  # row -> global_step when first activated
 
     for pi, pe in enumerate(patterns_events):
-        row_seq_counts = {}
-        for event in pe:
-            key = (event['row'], event['seq_idx'])
-            row_seq_counts[key] = row_seq_counts.get(key, 0) + 1
-
+        pattern_start = pi * STEPS_PER_PATTERN
         rows_in_pattern = set(e['row'] for e in pe)
         pattern_cells = {}
 
         for row in rows_in_pattern:
-            row_triggers = [s for (r, s), _ in row_seq_counts.items() if r == row]
+            # Record activation step for newly seen rows
+            if row not in row_start_step:
+                row_start_step[row] = pattern_start
+
+            # Get global steps where this row triggered
+            row_global_steps = [e['global_step'] for e in pe if e['row'] == row]
+            # Convert to row-local sequence indices using the row's phase
+            row_local_indices = set(
+                (gs - row_start_step[row]) % SEQ_LEN for gs in row_global_steps
+            )
 
             best_col, best_score = -1, -1
             for col in range(16):
                 expected = set(s for s in range(SEQ_LEN) if COL_SEQS[col][s] == 1)
-                observed = set(row_triggers)
-                hits = len(observed & expected)
-                misses = len(expected - observed)
-                false_alarms = len(observed - expected)
+                hits = len(row_local_indices & expected)
+                misses = len(expected - row_local_indices)
+                false_alarms = len(row_local_indices - expected)
                 score = hits - 0.5 * misses - 1.0 * false_alarms
                 if (row, col) in cumulative_cells:
                     score += 2.0

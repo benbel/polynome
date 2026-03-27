@@ -239,17 +239,28 @@ def render(steps_per_pattern=64, step_ms=450, sr=SR):
     print(f'  Total duration: {total_samples / sr:.1f}s ({total_steps} steps)')
 
     # Simulate the sequencer
+    # Track per-row activation step: button press = start of pattern for that row
+    # Each row's 16-step sequence phase starts from 0 when it first appears
+    row_start_step = {}  # row -> global_step when first activated
+
     global_step = 0
     for pi, pattern in enumerate(PATTERNS):
+        # Detect newly activated rows at pattern boundary
+        pattern_start = global_step
+        for (row, col), vel in pattern.items():
+            if row not in row_start_step:
+                row_start_step[row] = pattern_start
+
         for local_step in range(steps_per_pattern):
-            seq_idx = global_step % SEQ_LEN
             offset = global_step * step_samples
 
             for (row, col), vel in pattern.items():
+                # Per-row sequence index: phase starts from 0 when row was activated
+                row_seq_idx = (global_step - row_start_step[row]) % SEQ_LEN
                 # Check column sequence gate
-                if col < len(COL_SEQS) and COL_SEQS[col][seq_idx]:
+                if col < len(COL_SEQS) and COL_SEQS[col][row_seq_idx]:
                     # Apply step velocity
-                    vol = vel * STEP_VELS[seq_idx] * FX_GAIN
+                    vol = vel * STEP_VELS[row_seq_idx] * FX_GAIN
                     # Mix sample into buffer
                     sample = samples[row]
                     end = min(offset + len(sample), total_samples)
