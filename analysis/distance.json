@@ -1,12 +1,12 @@
 {
-  "spectral_centroid": 0.047407,
-  "mfcc": 0.339019,
-  "onset_density": 0.094763,
-  "ioi_histogram": 0.028885,
-  "rms_correlation": 0.246613,
-  "pitch_class": 0.271759,
-  "spectral_rolloff": 0.128291,
-  "composite": 0.187642,
+  "spectral_centroid": 0.035217,
+  "mfcc": 0.21396,
+  "onset_density": 0.097257,
+  "ioi_histogram": 0.031261,
+  "rms_correlation": 0.262203,
+  "pitch_class": 0.231051,
+  "spectral_rolloff": 0.09531,
+  "composite": 0.148356,
   "diagnosis": [
     "pitch_class HIGH \u2192 frequency mismatch, check mainFreqs"
   ]

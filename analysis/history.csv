@@ -27,3 +27,4 @@ iteration,composite_distance,description
 69,0.192398,drive 2.48 + no comb + decay 0.60
 70,0.164829,drive 2.0 + no comb + HF x2
 71,0.187642,drive 1.8 + no comb + HF x2
+72,0.148356,CMA-ES full optimizer run 1 applied

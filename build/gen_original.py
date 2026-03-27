@@ -13,14 +13,14 @@ from common import (
     to_stereo, mix_stereo, export_ogg, write_manifest, generate_reverb_ir,
 )
 
-DEFAULT_FREQS = [587, 494, 415, 349, 294, 247, 196, 147]
+DEFAULT_FREQS = [448, 540, 585, 375, 322, 243, 239, 173]
 
-# Warm, woody tone — marimba-like with body resonance
+# EM-optimized tone (CMA-ES block coordinate descent, run 1)
 DEFAULT_ENVELOPE = {
-    'attack_ms': 1.5,
-    'decay_time': 0.45,
+    'attack_ms': 0.79,
+    'decay_time': 0.099,
     'harmonic_ratios': [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 10.0, 12.0],
-    'harmonic_amplitudes_db': [0, -3, -6, -10, -14, -18, -22, -26, -32, -38],
+    'harmonic_amplitudes_db': [0, -1.4, -3.0, -15.9, -7.3, -18.7, -24.0, -22.9, -28.1, -49.9],
     'inharmonicity_cents': [0, 6, -2, 10, -4, 5, -7, 8, -3, 6],
 }
 
@@ -37,7 +37,7 @@ def gen_tone(freq, env_profile, sr=SR):
     atk = noise(atk_dur, sr)
     atk = bandpass(atk, max(20, freq * 0.5), min(sr / 2 - 100, freq * 4), sr)
     atk_env = env_exp_decay(atk_dur, 0.2, 0.003, sr)
-    atk *= atk_env * 0.35
+    atk *= atk_env * 0.44
 
     # --- Tonal body: slightly detuned partials for warmth ---
     sig = np.zeros(n)
@@ -56,8 +56,8 @@ def gen_tone(freq, env_profile, sr=SR):
     body_exc = np.zeros(n)
     body_exc[:atk_n] = atk[:min(atk_n, len(atk))]
     delay = max(1, int(sr / freq))
-    body = comb_filter(body_exc, delay, feedback=0.0, lp_freq=min(freq * 3, sr / 2 - 100), sr=sr)
-    body *= 0.0
+    body = comb_filter(body_exc, delay, feedback=0.068, lp_freq=min(freq * 3, sr / 2 - 100), sr=sr)
+    body *= 0.034
 
     # Combine tonal + body
     sig = sig + body[:n]
@@ -70,10 +70,10 @@ def gen_tone(freq, env_profile, sr=SR):
     sig[:len(atk)] += atk[:min(len(atk), n)]
 
     # Gentle warmth — minimal asymmetric saturation
-    sig = asymmetric_saturate(sig, drive=2.0, asymmetry=0.05)
+    sig = asymmetric_saturate(sig, drive=2.00, asymmetry=0.061)
 
     # High-frequency boost to match reference brightness
-    sig_hp = highpass(sig, 1500, sr) * 2.0
+    sig_hp = highpass(sig, 1500, sr) * 2.40
     sig = sig + sig_hp
 
     sig = normalize(sig, 0.85)

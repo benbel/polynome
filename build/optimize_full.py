@@ -14,9 +14,8 @@ Usage:
 import argparse, json, os, sys, time
 import numpy as np
 import librosa
-from scipy.optimize import minimize, differential_evolution
-from scipy.io import wavfile
 from scipy.signal import fftconvolve
+import cma
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (
@@ -52,50 +51,74 @@ SEQ_LEN = 16
 STEPS_PER_PATTERN = 64
 COMPARE_SR = 22050  # sample rate used by compare_audio.py
 
+# Cached reference envelope (computed once on first use)
+_ref_envelope_cache = {}
+
+
+def get_reference_envelope(sr):
+    """Load and cache the reference RMS envelope at the given sample rate."""
+    if sr in _ref_envelope_cache:
+        return _ref_envelope_cache[sr]
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    ref_path = os.path.join(root, 'analysis', 'reference.wav')
+    if not os.path.exists(ref_path):
+        return None
+
+    env_sr = sr // 2  # downsample for speed
+    y_ref, _ = librosa.load(ref_path, sr=env_sr, mono=True)
+    frame_len = int(env_sr * 0.5)
+    hop = frame_len // 4
+    rms = librosa.feature.rms(y=y_ref, frame_length=frame_len, hop_length=hop)[0]
+    times = np.arange(len(rms)) * hop / env_sr
+
+    _ref_envelope_cache[sr] = (rms, times, env_sr, frame_len, hop)
+    return _ref_envelope_cache[sr]
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Parameter packing/unpacking
 # ══════════════════════════════════════════════════════════════════════════════
 
 PARAM_SPEC = [
-    # Synthesis params
-    ('attack_ms',       1.5,    0.3,   15.0),
-    ('decay_time',      0.45,   0.05,   1.5),
-    ('drive',           2.0,    1.0,    4.0),
-    ('asymmetry',       0.05,   0.0,    0.3),
-    ('hf_boost',        2.0,    0.0,    5.0),
-    ('comb_feedback',   0.0,    0.0,    0.95),
-    ('comb_mix',        0.0,    0.0,    0.5),
-    ('attack_level',    0.35,   0.0,    1.0),
+    # Synthesis params (run 1 optimized defaults)
+    ('attack_ms',       0.79,   0.1,   15.0),
+    ('decay_time',      0.099,  0.02,   1.5),
+    ('drive',           2.00,   1.0,    4.0),
+    ('asymmetry',       0.061,  0.0,    0.3),
+    ('hf_boost',        2.40,   0.0,    5.0),
+    ('comb_feedback',   0.068,  0.0,    0.95),
+    ('comb_mix',        0.034,  0.0,    0.5),
+    ('attack_level',    0.44,   0.0,    1.0),
     # Harmonic amplitudes (dB relative to fundamental)
-    ('harm_1_db',       -3.0,  -30.0,   0.0),
-    ('harm_2_db',       -6.0,  -30.0,   0.0),
-    ('harm_3_db',      -10.0,  -40.0,   0.0),
-    ('harm_4_db',      -14.0,  -40.0,   0.0),
-    ('harm_5_db',      -18.0,  -40.0,   0.0),
-    ('harm_6_db',      -22.0,  -50.0,   0.0),
-    ('harm_7_db',      -26.0,  -50.0,   0.0),
-    ('harm_8_db',      -32.0,  -60.0,   0.0),
-    ('harm_9_db',      -38.0,  -60.0,   0.0),
+    ('harm_1_db',       -1.4,  -30.0,   0.0),
+    ('harm_2_db',       -3.0,  -30.0,   0.0),
+    ('harm_3_db',      -15.9,  -40.0,   0.0),
+    ('harm_4_db',       -7.3,  -40.0,   0.0),
+    ('harm_5_db',      -18.7,  -40.0,   0.0),
+    ('harm_6_db',      -24.0,  -50.0,   0.0),
+    ('harm_7_db',      -22.9,  -50.0,   0.0),
+    ('harm_8_db',      -28.1,  -60.0,   0.0),
+    ('harm_9_db',      -49.9,  -60.0,   0.0),
     # Effects
-    ('reverb_wet',      0.08,   0.0,    0.5),
-    ('reverb_length',   1.0,    0.2,    3.0),
-    ('reverb_dark',     0.35,   0.0,    0.9),
-    ('delay_wet',       0.15,   0.0,    0.5),
-    ('delay_feedback',  0.25,   0.0,    0.7),
-    ('delay_dark_lp',   3000,   500,   8000),
+    ('reverb_wet',      0.118,  0.0,    0.5),
+    ('reverb_length',   1.75,   0.2,    3.0),
+    ('reverb_dark',     0.371,  0.0,    0.9),
+    ('delay_wet',       0.087,  0.0,    0.5),
+    ('delay_feedback',  0.067,  0.0,    0.7),
+    ('delay_dark_lp',   1502,   500,   8000),
     # Timing & level
     ('step_ms',         74.0,   50.0,  120.0),
     ('target_rms',      0.30,   0.10,   0.60),
-    # Frequencies (8 rows)
-    ('freq_0',          587,    200,    800),
-    ('freq_1',          494,    150,    700),
-    ('freq_2',          415,    130,    600),
-    ('freq_3',          349,    110,    500),
-    ('freq_4',          294,    90,     420),
-    ('freq_5',          247,    80,     350),
-    ('freq_6',          196,    60,     280),
-    ('freq_7',          147,    50,     220),
+    # Frequencies (8 rows — run 1 optimized)
+    ('freq_0',          448,    200,    800),
+    ('freq_1',          540,    150,    800),
+    ('freq_2',          585,    200,    800),
+    ('freq_3',          375,    110,    600),
+    ('freq_4',          322,    90,     500),
+    ('freq_5',          243,    80,     400),
+    ('freq_6',          239,    80,     400),
+    ('freq_7',          173,    50,     300),
 ]
 
 PARAM_NAMES = [p[0] for p in PARAM_SPEC]
@@ -228,6 +251,30 @@ def render_with_params(x, patterns, fast=False):
     for ch in range(2):
         wet = fftconvolve(mix[:, ch], ir[:, ch])[:mix.shape[0]]
         mix[:, ch] += wet * p['reverb_wet']
+
+    # Apply reference-matched volume envelope
+    ref_env = get_reference_envelope(sr)
+    if ref_env is not None:
+        rms_ref, ref_times, env_sr, frame_len, hop = ref_env
+        mono_tmp = np.mean(mix, axis=1)
+        from scipy.signal import resample as sig_resample
+        mono_ds = sig_resample(mono_tmp, int(len(mono_tmp) * env_sr / sr))
+        rms_ren = librosa.feature.rms(y=mono_ds, frame_length=frame_len, hop_length=hop)[0]
+        n_env = min(len(rms_ref), len(rms_ren))
+        gain_curve = np.ones(n_env)
+        for i in range(n_env):
+            if rms_ren[i] > 0.001:
+                gain_curve[i] = rms_ref[i] / rms_ren[i]
+            else:
+                gain_curve[i] = 1.0
+        from scipy.ndimage import uniform_filter1d
+        gain_curve = uniform_filter1d(gain_curve, size=8)
+        gain_curve = np.clip(gain_curve, 0.1, 5.0)
+        gain_times = np.arange(n_env) * hop / env_sr
+        sample_times = np.arange(mix.shape[0]) / sr
+        gain_interp = np.interp(sample_times, gain_times, gain_curve)
+        mix[:, 0] *= gain_interp
+        mix[:, 1] *= gain_interp
 
     # Normalize
     current_rms = np.sqrt(np.mean(mix ** 2))
@@ -455,14 +502,131 @@ def infer_buttons(y_ref, sr, freqs, step_ms):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Block definitions for coordinate descent
+# ══════════════════════════════════════════════════════════════════════════════
+
+BLOCKS = {
+    'A_synthesis': [
+        'attack_ms', 'decay_time', 'drive', 'asymmetry',
+        'hf_boost', 'comb_feedback', 'comb_mix', 'attack_level',
+    ],
+    'B_harmonics': [
+        'harm_1_db', 'harm_2_db', 'harm_3_db', 'harm_4_db', 'harm_5_db',
+        'harm_6_db', 'harm_7_db', 'harm_8_db', 'harm_9_db',
+    ],
+    'C_effects': [
+        'reverb_wet', 'reverb_length', 'reverb_dark',
+        'delay_wet', 'delay_feedback', 'delay_dark_lp',
+    ],
+    'D_frequencies': [
+        'freq_0', 'freq_1', 'freq_2', 'freq_3',
+        'freq_4', 'freq_5', 'freq_6', 'freq_7',
+    ],
+    'E_timing': [
+        'step_ms', 'target_rms',
+    ],
+}
+
+
+def get_block_indices(block_name):
+    """Get indices into PARAM_SPEC for a given block."""
+    names = BLOCKS[block_name]
+    return [PARAM_NAMES.index(n) for n in names]
+
+
+def optimize_block_cmaes(block_name, x_full, patterns, y_ref_compare, budget=200):
+    """Optimize one block of parameters using CMA-ES, holding others fixed.
+
+    Returns (improved_x_full, best_composite, n_evals).
+    """
+    indices = get_block_indices(block_name)
+    n_block = len(indices)
+
+    # Extract block values, bounds, and compute initial sigma
+    x0_block = x_full[indices].copy()
+    bounds_block = [PARAM_BOUNDS[i] for i in indices]
+    lowers = np.array([b[0] for b in bounds_block])
+    uppers = np.array([b[1] for b in bounds_block])
+
+    # Initial sigma: ~10% of range for each parameter
+    ranges = uppers - lowers
+    sigma0 = float(np.median(ranges * 0.10))
+
+    # Scaling: normalize to [0, 1] for CMA-ES
+    def to_unit(x_block):
+        return (x_block - lowers) / ranges
+
+    def from_unit(u_block):
+        return u_block * ranges + lowers
+
+    u0 = to_unit(x0_block)
+
+    eval_count = [0]
+    best_composite = [float('inf')]
+    best_x_full = [x_full.copy()]
+
+    def objective(u):
+        eval_count[0] += 1
+        x_block = from_unit(np.clip(u, 0, 1))
+        x_candidate = x_full.copy()
+        x_candidate[indices] = x_block
+        try:
+            y_ren = render_with_params(x_candidate, patterns, fast=True)
+            composite, _ = compute_composite(y_ren, y_ref_compare)
+            if composite < best_composite[0]:
+                best_composite[0] = composite
+                best_x_full[0] = x_candidate.copy()
+                print(f"      [{block_name}] eval {eval_count[0]:3d}: "
+                      f"{composite:.4f} (new best)")
+            return composite
+        except Exception as e:
+            print(f"      [{block_name}] eval {eval_count[0]:3d}: ERROR {e}")
+            return 1.0
+
+    # CMA-ES options
+    popsize = max(8, 2 * n_block)
+    maxiter = max(10, budget // popsize)
+
+    opts = {
+        'popsize': popsize,
+        'maxiter': maxiter,
+        'maxfevals': budget,
+        'bounds': [0, 1],  # unit space
+        'tolfun': 1e-4,
+        'tolx': 1e-4,
+        'verbose': -9,  # suppress CMA-ES output
+        'seed': int(time.time()) % 2**31,
+    }
+
+    try:
+        es = cma.CMAEvolutionStrategy(u0.tolist(), 0.15, opts)
+        while not es.stop():
+            solutions = es.ask()
+            fitnesses = [objective(np.array(s)) for s in solutions]
+            es.tell(solutions, fitnesses)
+        es.result_pretty()
+    except Exception as e:
+        print(f"      [{block_name}] CMA-ES error: {e}")
+
+    return best_x_full[0], best_composite[0], eval_count[0]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Main optimization loop
 # ══════════════════════════════════════════════════════════════════════════════
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description='Full parameterized EM optimizer for original mode audio')
     parser.add_argument('--ref', default=None)
-    parser.add_argument('--em-iters', type=int, default=3)
-    parser.add_argument('--fast', action='store_true', help='Use half sample rate for speed')
+    parser.add_argument('--em-iters', type=int, default=2,
+                        help='Number of EM (E-step + M-step) iterations')
+    parser.add_argument('--budget', type=int, default=200,
+                        help='Max evaluations per block per M-step')
+    parser.add_argument('--blocks', nargs='*', default=None,
+                        help='Specific blocks to optimize (default: all)')
+    parser.add_argument('--skip-estep', action='store_true',
+                        help='Skip E-step (pattern inference)')
     args = parser.parse_args()
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -491,109 +655,112 @@ def main():
     best_x = x.copy()
     best_patterns = patterns
 
+    # Initial evaluation
+    print("\nInitial evaluation...")
+    t0 = time.time()
+    y_init = render_with_params(x, patterns, fast=True)
+    c_init, m_init = compute_composite(y_init, y_ref_compare)
+    t_eval = time.time() - t0
+    print(f"  Composite: {c_init:.4f} ({t_eval:.1f}s per eval)")
+    print(f"  Metrics: {', '.join(f'{k}={v:.3f}' for k, v in sorted(m_init.items()))}")
+    best_composite = c_init
+    best_x = x.copy()
+
+    # Select blocks
+    block_order = args.blocks or list(BLOCKS.keys())
+    # Validate
+    for b in block_order:
+        if b not in BLOCKS:
+            print(f"ERROR: unknown block '{b}'. Available: {list(BLOCKS.keys())}")
+            sys.exit(1)
+
     for em_iter in range(args.em_iters):
         print(f"\n{'='*70}")
-        print(f"EM ITERATION {em_iter + 1}")
+        print(f"EM ITERATION {em_iter + 1} / {args.em_iters}")
         print(f"{'='*70}")
 
         # ── E-step: Infer buttons ────────────────────────────────────────
-        print("\n[E-step] Inferring button presses...")
-        p = unpack_params(x)
-        inferred = infer_buttons(y_ref_full, SR, p['freqs'], p['step_ms'])
-        if inferred:
-            print(f"  Inferred {len(inferred)} patterns")
-            for i, pat in enumerate(inferred):
-                cells = sorted(pat.keys())
-                if cells:
-                    print(f"    P{i:2d}: {cells}")
+        if not args.skip_estep:
+            print("\n[E-step] Inferring button presses...")
+            p = unpack_params(x)
+            inferred = infer_buttons(y_ref_full, SR, p['freqs'], p['step_ms'])
+            if inferred:
+                n_inf = len(inferred)
+                total_cells = sum(len(pat) for pat in inferred)
+                print(f"  Inferred {n_inf} patterns, {total_cells} total cells")
 
-            # Test if inferred patterns are better
-            print("  Testing inferred patterns vs current...")
-            y_inferred = render_with_params(x, inferred, fast=args.fast)
-            c_inferred, m_inferred = compute_composite(y_inferred, y_ref_compare)
+                # Test inferred vs current
+                print("  Comparing inferred vs current patterns...")
+                y_inferred = render_with_params(x, inferred, fast=True)
+                c_inferred, _ = compute_composite(y_inferred, y_ref_compare)
 
-            y_current = render_with_params(x, patterns, fast=args.fast)
-            c_current, m_current = compute_composite(y_current, y_ref_compare)
+                y_current = render_with_params(x, patterns, fast=True)
+                c_current, _ = compute_composite(y_current, y_ref_compare)
 
-            print(f"  Current patterns: {c_current:.4f}")
-            print(f"  Inferred patterns: {c_inferred:.4f}")
+                print(f"    Current:  {c_current:.4f}")
+                print(f"    Inferred: {c_inferred:.4f}")
 
-            if c_inferred < c_current:
-                print(f"  ✓ Using inferred patterns")
-                patterns = inferred
+                if c_inferred < c_current:
+                    print(f"    -> Using inferred patterns")
+                    patterns = inferred
+                else:
+                    print(f"    -> Keeping current patterns")
             else:
-                print(f"  × Keeping current patterns")
-        else:
-            print("  No patterns inferred, keeping current")
+                print("  No patterns inferred, keeping current")
 
-        # ── M-step: Optimize parameters ──────────────────────────────────
-        print("\n[M-step] Optimizing synthesis parameters...")
-        eval_count = [0]
-        eval_best = [float('inf')]
+        # ── M-step: Block coordinate descent with CMA-ES ─────────────────
+        print(f"\n[M-step] Block coordinate descent ({len(block_order)} blocks, "
+              f"budget={args.budget}/block)")
 
-        def objective(x_candidate):
-            eval_count[0] += 1
-            try:
-                y_ren = render_with_params(x_candidate, patterns, fast=args.fast)
-                composite, metrics = compute_composite(y_ren, y_ref_compare)
-                if composite < eval_best[0]:
-                    eval_best[0] = composite
-                    if eval_count[0] % 5 == 0:
-                        print(f"    eval {eval_count[0]}: {composite:.4f} (best so far)")
-                return composite
-            except Exception as e:
-                print(f"    eval {eval_count[0]}: ERROR {e}")
-                return 1.0
+        for block_name in block_order:
+            indices = get_block_indices(block_name)
+            n_params = len(indices)
+            param_names = [PARAM_NAMES[i] for i in indices]
+            print(f"\n  Block {block_name} ({n_params} params: "
+                  f"{', '.join(param_names[:4])}{'...' if n_params > 4 else ''})")
 
-        # Initial evaluation
-        c0 = objective(x)
-        print(f"  Initial composite: {c0:.4f}")
+            x_before = x.copy()
+            c_before = best_composite
 
-        # Use Nelder-Mead for robustness with non-smooth landscape
-        # Limit iterations since each eval is expensive
-        result = minimize(
-            objective, x,
-            method='Nelder-Mead',
-            options={
-                'maxiter': 80,
-                'maxfev': 120,
-                'xatol': 0.001,
-                'fatol': 0.001,
-                'adaptive': True,
-            }
-        )
+            x_improved, c_improved, n_evals = optimize_block_cmaes(
+                block_name, x, patterns, y_ref_compare,
+                budget=args.budget)
 
-        print(f"\n  Optimization complete: {eval_count[0]} evaluations")
-        print(f"  Best composite: {result.fun:.4f}")
+            if c_improved < c_before:
+                improvement = c_before - c_improved
+                x = x_improved
+                best_composite = c_improved
+                best_x = x.copy()
+                best_patterns = patterns
 
-        if result.fun < best_composite:
-            best_composite = result.fun
-            best_x = result.x.copy()
-            best_patterns = patterns
-            x = result.x.copy()
-            print(f"  ✓ New best: {best_composite:.4f}")
-        else:
-            print(f"  × No improvement over previous best ({best_composite:.4f})")
-            x = best_x.copy()
+                # Show what changed
+                changed = []
+                for idx in indices:
+                    name = PARAM_NAMES[idx]
+                    old = x_before[idx]
+                    new = x[idx]
+                    if abs(new - old) > 0.001:
+                        changed.append(f"{name}: {old:.3f}->{new:.3f}")
+                print(f"    -> Improved {c_before:.4f} -> {c_improved:.4f} "
+                      f"(delta={improvement:.4f}, {n_evals} evals)")
+                if changed:
+                    for c in changed:
+                        print(f"       {c}")
+            else:
+                x = x_before  # revert
+                print(f"    -> No improvement ({n_evals} evals), reverting")
 
-        # Print current best parameters
-        p = unpack_params(best_x)
-        print(f"\n  Current best parameters:")
-        for name, val, _, _ in PARAM_SPEC:
-            default = dict(zip(PARAM_NAMES, PARAM_DEFAULTS))[name]
-            current = p[name] if name in p else dict(zip(PARAM_NAMES, best_x))[name]
-            changed = " *" if abs(current - default) > 0.01 else ""
-            print(f"    {name:20s}: {current:10.3f} (default: {default:.3f}){changed}")
+        # End of M-step cycle summary
+        print(f"\n  M-step cycle complete. Best composite: {best_composite:.4f}")
 
-    # ── Final evaluation with full quality ────────────────────────────────
+    # ── Final evaluation at full quality ──────────────────────────────────
     print(f"\n{'='*70}")
-    print("FINAL RESULTS")
+    print("FINAL EVALUATION (full quality)")
     print(f"{'='*70}")
 
-    # Re-evaluate at full quality if we were using fast mode
     y_final = render_with_params(best_x, best_patterns, fast=False)
     c_final, m_final = compute_composite(y_final, y_ref_compare)
-    print(f"\nFinal composite distance: {c_final:.4f}")
+    print(f"\nComposite distance: {c_final:.4f}")
     print(f"\nPer-metric breakdown:")
     for k, v in sorted(m_final.items()):
         print(f"  {k:25s}: {v:.4f}")
@@ -603,36 +770,45 @@ def main():
     out = {
         'composite': c_final,
         'metrics': {k: round(v, 6) for k, v in m_final.items()},
-        'params': {name: round(float(best_x[i]), 4) for i, (name, _, _, _) in enumerate(PARAM_SPEC)},
+        'params': {name: round(float(best_x[i]), 4)
+                   for i, (name, _, _, _) in enumerate(PARAM_SPEC)},
         'patterns': [
             {f"{r}-{c}": v for (r, c), v in pat.items()}
             for pat in best_patterns
         ],
     }
     out_path = os.path.join(root, 'analysis', 'process', 'optimized_full.json')
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, 'w') as f:
         json.dump(out, f, indent=2)
     print(f"\nSaved: {out_path}")
 
     # Print code to apply
     print(f"\n{'='*70}")
-    print("CODE TO APPLY (gen_original.py DEFAULT_ENVELOPE):")
+    print("CODE TO APPLY")
     print(f"{'='*70}")
+    print(f"\n# gen_original.py DEFAULT_ENVELOPE:")
     print(f"DEFAULT_ENVELOPE = {{")
     print(f"    'attack_ms': {p['attack_ms']:.2f},")
     print(f"    'decay_time': {p['decay_time']:.3f},")
     print(f"    'harmonic_ratios': [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 10.0, 12.0],")
-    print(f"    'harmonic_amplitudes_db': {[round(x, 1) for x in p['harmonic_amps_db']]},")
+    harm_str = [round(x, 1) for x in p['harmonic_amps_db']]
+    print(f"    'harmonic_amplitudes_db': {harm_str},")
     print(f"    'inharmonicity_cents': [0, 6, -2, 10, -4, 5, -7, 8, -3, 6],")
     print(f"}}")
-    print(f"\ngen_tone drive={p['drive']:.2f}, asymmetry={p['asymmetry']:.3f}")
-    print(f"hf_boost={p['hf_boost']:.2f}, comb_feedback={p['comb_feedback']:.3f}, comb_mix={p['comb_mix']:.3f}")
-    print(f"attack_level={p['attack_level']:.3f}")
-    print(f"\nEffects:")
-    print(f"  reverb_wet={p['reverb_wet']:.3f}, reverb_length={p['reverb_length']:.2f}, reverb_dark={p['reverb_dark']:.3f}")
-    print(f"  delay_wet={p['delay_wet']:.3f}, delay_feedback={p['delay_feedback']:.3f}, delay_dark_lp={p['delay_dark_lp']:.0f}")
+    print(f"\n# gen_original.py gen_tone():")
+    print(f"  drive={p['drive']:.2f}, asymmetry={p['asymmetry']:.3f}")
+    print(f"  hf_boost={p['hf_boost']:.2f}, comb_feedback={p['comb_feedback']:.3f}, "
+          f"comb_mix={p['comb_mix']:.3f}")
+    print(f"  attack_level={p['attack_level']:.3f}")
+    print(f"\n# render_original.py effects:")
+    print(f"  REVERB_WET={p['reverb_wet']:.3f}, REVERB_LENGTH={p['reverb_length']:.2f}, "
+          f"REVERB_DARK={p['reverb_dark']:.3f}")
+    print(f"  DELAY_WET={p['delay_wet']:.3f}, DELAY_FEEDBACK={p['delay_feedback']:.3f}, "
+          f"DELAY_DARK_LP={p['delay_dark_lp']:.0f}")
     print(f"  step_ms={p['step_ms']:.1f}, target_rms={p['target_rms']:.3f}")
-    print(f"\nFrequencies: {[round(f, 1) for f in p['freqs']]}")
+    print(f"\n# gen_original.py DEFAULT_FREQS:")
+    print(f"  DEFAULT_FREQS = {[round(f, 1) for f in p['freqs']]}")
 
 
 if __name__ == '__main__':
