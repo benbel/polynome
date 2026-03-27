@@ -81,32 +81,42 @@ def get_reference_envelope(sr):
 # ══════════════════════════════════════════════════════════════════════════════
 
 PARAM_SPEC = [
-    # Synthesis params (run 2 optimized)
-    ('attack_ms',       0.11,   0.05,  15.0),
-    ('decay_time',      0.259,  0.02,   1.5),
-    ('drive',           1.37,   1.0,    4.0),
-    ('asymmetry',       0.080,  0.0,    0.3),
-    ('hf_boost',        2.78,   0.0,    5.0),
-    ('comb_feedback',   0.085,  0.0,    0.95),
-    ('comb_mix',        0.138,  0.0,    0.5),
-    ('attack_level',    0.125,  0.0,    1.0),
-    # Harmonic amplitudes (run 2 optimized)
-    ('harm_1_db',       -3.3,  -30.0,   0.0),
-    ('harm_2_db',       -0.1,  -30.0,   0.0),
-    ('harm_3_db',      -11.5,  -40.0,   0.0),
-    ('harm_4_db',      -17.9,  -40.0,   0.0),
-    ('harm_5_db',      -11.0,  -40.0,   0.0),
-    ('harm_6_db',      -29.8,  -50.0,   0.0),
-    ('harm_7_db',      -16.8,  -50.0,   0.0),
-    ('harm_8_db',      -30.0,  -60.0,   0.0),
-    ('harm_9_db',      -40.8,  -60.0,   0.0),
-    # Post-mix spectral shaping EQ (3-band parametric — new)
-    ('eq_low_gain_db',   0.0, -12.0,  12.0),  # gain at low freq
-    ('eq_low_freq',    250.0,  80.0, 500.0),   # low band center
-    ('eq_mid_gain_db',   0.0, -12.0,  12.0),   # gain at mid freq
-    ('eq_mid_freq',    800.0, 300.0, 3000.0),   # mid band center
-    ('eq_hi_gain_db',    0.0, -12.0,  12.0),    # gain at high freq
-    ('eq_hi_freq',    3000.0, 1500.0, 8000.0),  # high band center
+    # Synthesis params (run 4 — block A optimized)
+    ('attack_ms',       0.073,  0.05,  15.0),
+    ('decay_time',      0.278,  0.02,   1.5),
+    ('drive',           1.171,  1.0,    4.0),
+    ('asymmetry',       0.010,  0.0,    0.3),
+    ('hf_boost',        2.211,  0.0,    5.0),
+    ('comb_feedback',   0.159,  0.0,    0.95),
+    ('comb_mix',        0.186,  0.0,    0.5),
+    ('attack_level',    0.497,  0.0,    1.0),
+    # Harmonic amplitudes (run 4 — block B optimized)
+    ('harm_1_db',       -5.5,  -30.0,   0.0),
+    ('harm_2_db',       -1.9,  -30.0,   0.0),
+    ('harm_3_db',      -25.6,  -40.0,   0.0),
+    ('harm_4_db',      -28.4,  -40.0,   0.0),
+    ('harm_5_db',       -7.6,  -40.0,   0.0),
+    ('harm_6_db',      -50.0,  -50.0,   0.0),
+    ('harm_7_db',      -11.6,  -50.0,   0.0),
+    ('harm_8_db',      -47.4,  -60.0,   0.0),
+    ('harm_9_db',      -28.5,  -60.0,   0.0),
+    # Body resonance formants
+    ('body_res_1_freq',  795,  200,   2000),
+    ('body_res_1_q',     1.86, 0.5,   10.0),
+    ('body_res_1_amp',   0.008,0.0,    1.0),
+    ('body_res_2_freq', 1551,  500,   4000),
+    ('body_res_2_q',     3.38, 0.5,   10.0),
+    ('body_res_2_amp',   0.049,0.0,    1.0),
+    # Per-harmonic decay and attack brightness
+    ('harm_decay_slope', 0.005,0.0,    5.0),
+    ('attack_brightness',0.829,0.2,    5.0),
+    # Post-mix spectral shaping EQ (run 4 — block C_eq optimized)
+    ('eq_low_gain_db',   0.73, -12.0,  12.0),
+    ('eq_low_freq',    369.5,  80.0, 500.0),
+    ('eq_mid_gain_db',   3.59, -12.0,  12.0),
+    ('eq_mid_freq',   1209.1, 300.0, 3000.0),
+    ('eq_hi_gain_db',   -8.54, -12.0,  12.0),
+    ('eq_hi_freq',    3691.6, 1500.0, 8000.0),
     # Effects
     ('reverb_wet',      0.118,  0.0,    0.5),
     ('reverb_length',   1.75,   0.2,    3.0),
@@ -117,15 +127,15 @@ PARAM_SPEC = [
     # Timing & level
     ('step_ms',         61.5,   50.0,  120.0),
     ('target_rms',      0.37,   0.10,   0.60),
-    # Frequencies
-    ('freq_0',          448,    200,    800),
-    ('freq_1',          540,    150,    800),
-    ('freq_2',          585,    200,    800),
-    ('freq_3',          375,    110,    600),
-    ('freq_4',          322,    90,     500),
-    ('freq_5',          243,    80,     400),
-    ('freq_6',          239,    80,     400),
-    ('freq_7',          173,    50,     300),
+    # Frequencies (run 4 — block E optimized)
+    ('freq_0',          578.4,  130,    800),
+    ('freq_1',          417.5,  130,    800),
+    ('freq_2',          347.8,  110,    800),
+    ('freq_3',          265.2,  100,    600),
+    ('freq_4',          482.6,   80,    500),
+    ('freq_5',          183.2,   65,    400),
+    ('freq_6',          284.9,   65,    400),
+    ('freq_7',          146.2,   50,    300),
 ]
 
 PARAM_NAMES = [p[0] for p in PARAM_SPEC]
@@ -155,23 +165,32 @@ def gen_tone_param(freq, p, sr=SR):
     n = int(sr * dur)
     t = np.arange(n) / sr
 
+    harm_decay_slope = p.get('harm_decay_slope', 0.0)
+    attack_brightness = p.get('attack_brightness', 1.0)
+
     # Attack transient
     atk_dur = 0.008
     atk_n = int(sr * atk_dur)
     atk = noise(atk_dur, sr)
     atk = bandpass(atk, max(20, freq * 0.5), min(sr/2 - 100, freq * 4), sr)
+    # Apply attack_brightness: highpass to add spectral tilt
+    atk_hp_freq = np.clip(freq * attack_brightness, 20, sr / 2 - 1)
+    atk = highpass(atk, atk_hp_freq, sr)
     atk_env = env_exp_decay(atk_dur, 0.2, 0.003, sr)
     atk *= atk_env * p['attack_level']
 
-    # Tonal body
+    # Tonal body with per-harmonic decay
     sig = np.zeros(n)
     amps_db = p['harmonic_amps_db']
+    decay_time = max(p['decay_time'], 0.001)
     for h in range(len(amps_db)):
         partial_freq = freq * (h + 1)
         if partial_freq >= sr / 2:
             break
         amp = 10 ** (amps_db[h] / 20)
-        sig += amp * np.sin(2 * np.pi * partial_freq * t)
+        # Per-harmonic envelope: higher harmonics decay faster
+        env_h = np.exp(-t * (1.0 / decay_time + harm_decay_slope * h))
+        sig += amp * np.sin(2 * np.pi * partial_freq * t) * env_h
 
     # Body resonance via comb filter
     if p['comb_mix'] > 0.001:
@@ -184,9 +203,26 @@ def gen_tone_param(freq, p, sr=SR):
         body *= p['comb_mix']
         sig = sig + body[:n]
 
-    # Envelope
-    env = env_exp_decay(dur, p['attack_ms'], p['decay_time'], sr)
-    sig *= env
+    # Body resonance formants (two resonant bandpass filters)
+    from scipy.signal import iirpeak, sosfilt as _sosfilt
+    for res_idx in [1, 2]:
+        res_freq = p.get(f'body_res_{res_idx}_freq', 500)
+        res_q = p.get(f'body_res_{res_idx}_q', 2.0)
+        res_amp = p.get(f'body_res_{res_idx}_amp', 0.0)
+        if res_amp > 0.001 and 20 < res_freq < sr / 2 - 1:
+            # iirpeak returns (b, a) for a peak/notch filter
+            w0 = res_freq / (sr / 2)  # normalized frequency
+            w0 = np.clip(w0, 0.001, 0.999)
+            b_peak, a_peak = iirpeak(w0, res_q)
+            from scipy.signal import lfilter
+            resonance = lfilter(b_peak, a_peak, sig)
+            sig = sig + resonance * res_amp
+
+    # Attack envelope (applied on top of per-harmonic decay)
+    a_samples = int(sr * p['attack_ms'] / 1000)
+    if a_samples > 0 and a_samples < n:
+        attack_env = np.linspace(0, 1, a_samples)
+        sig[:a_samples] *= attack_env
 
     # Insert attack
     sig[:len(atk)] += atk[:min(len(atk), n)]
@@ -216,7 +252,7 @@ def render_with_params(x, patterns, fast=False):
     Returns mono audio at COMPARE_SR for comparison.
     """
     p = unpack_params(x)
-    sr = SR // 2 if fast else SR
+    sr = COMPARE_SR if fast else SR  # render at COMPARE_SR directly in fast mode (skip resample)
 
     # Pre-render samples
     freqs = p['freqs']
@@ -240,6 +276,8 @@ def render_with_params(x, patterns, fast=False):
             offset = global_step * step_samples
 
             for (row, col), vel in pattern.items():
+                # COL_SEQS model: each column has a 16-step rhythm pattern
+                # Cell (row, col) means row plays column's rhythm sequence
                 if col < len(COL_SEQS) and COL_SEQS[col][seq_idx]:
                     vol = vel * STEP_VELS[seq_idx]
                     sample = samples[row]
@@ -320,20 +358,29 @@ def render_with_params(x, patterns, fast=False):
 
 
 def apply_delay(mix, p, sr):
-    """Stereo delay matching engine.js."""
+    """Vectorized stereo delay matching engine.js."""
     n = mix.shape[0]
     dl = int(0.33 * sr)
     dr = int(0.22 * sr)
     out = mix.copy()
+    fb = p['delay_feedback']
 
     for ch, d in enumerate([dl, dr]):
-        buf = np.zeros(n + d)
-        buf[d:d+n] = mix[:, ch]
-        for i in range(d, n + d):
-            fb_idx = i - d
-            if 0 <= fb_idx < n:
-                buf[i] += p['delay_feedback'] * buf[fb_idx]
-        delayed = buf[d:d+n]
+        # Vectorized delay with feedback using IIR-like approach
+        # delayed[i] = mix[i-d] + fb * delayed[i-d]
+        # This is equivalent to a geometric sum of delayed copies
+        sig = mix[:, ch]
+        delayed = np.zeros(n)
+        # Apply feedback taps (geometric decay, typically converges fast)
+        tap = sig.copy()
+        for k in range(1, 20):  # max 20 feedback taps
+            tap_amp = fb ** k
+            if tap_amp < 0.001:
+                break
+            shift = d * k
+            if shift >= n:
+                break
+            delayed[shift:] += tap[:n - shift] * tap_amp
         delayed = lowpass(delayed, p['delay_dark_lp'], sr)
         out[:, ch] += delayed * p['delay_wet']
 
@@ -341,77 +388,114 @@ def apply_delay(mix, p, sr):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Distance computation (inline, matching compare_audio.py)
+# Distance computation (with reference caching for speed)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def compute_composite(y_ren, y_ref, sr=COMPARE_SR):
-    """Compute composite distance matching compare_audio.py methodology."""
+_ref_features_cache = {}
+
+
+def _get_ref_features(y_ref, sr):
+    """Compute and cache all reference audio features (computed once)."""
+    key = (len(y_ref), sr)
+    if key in _ref_features_cache:
+        return _ref_features_cache[key]
+
+    feats = {}
+    feats['sc'] = librosa.feature.spectral_centroid(y=y_ref, sr=sr)[0]
+    feats['mfcc_mean'] = np.mean(librosa.feature.mfcc(y=y_ref, sr=sr, n_mfcc=13), axis=1)
+    feats['onsets'] = librosa.onset.onset_detect(y=y_ref, sr=sr)
+    feats['onsets_t'] = librosa.onset.onset_detect(y=y_ref, sr=sr, units='time')
+    feats['onset_rate'] = len(feats['onsets']) / max(len(y_ref)/sr, 0.1)
+    fl = int(sr * 0.05)
+    hl = fl // 2
+    feats['rms'] = librosa.feature.rms(y=y_ref, frame_length=fl, hop_length=hl)[0]
+    feats['chroma_mean'] = np.mean(librosa.feature.chroma_stft(y=y_ref, sr=sr), axis=1)
+    feats['rolloff'] = librosa.feature.spectral_rolloff(y=y_ref, sr=sr)[0]
+    feats['mel_db'] = librosa.power_to_db(
+        librosa.feature.melspectrogram(y=y_ref, sr=sr, n_mels=128) + 1e-10)
+
+    _ref_features_cache[key] = feats
+    return feats
+
+
+def compute_mel_distance(y_ren, y_ref, sr=COMPARE_SR):
+    """Compute normalized Frobenius distance between 128-band log-mel spectrograms."""
+    ref = _get_ref_features(y_ref, sr)
+    S_ref_db = ref['mel_db']
+
     n = min(len(y_ref), len(y_ren))
-    y_ref = y_ref[:n]
+    S_ren = librosa.feature.melspectrogram(y=y_ren[:n], sr=sr, n_mels=128)
+    S_ren_db = librosa.power_to_db(S_ren + 1e-10)
+
+    n_frames = min(S_ref_db.shape[1], S_ren_db.shape[1])
+    dist = np.linalg.norm(S_ref_db[:, :n_frames] - S_ren_db[:, :n_frames]) / np.sqrt(n_frames * 128)
+    return float(dist)
+
+
+def compute_composite(y_ren, y_ref, sr=COMPARE_SR):
+    """Compute composite distance matching compare_audio.py methodology.
+    Uses cached reference features for speed."""
+    ref = _get_ref_features(y_ref, sr)
+    n = min(len(y_ref), len(y_ren))
     y_ren = y_ren[:n]
 
     metrics = {}
 
-    # Spectral centroid
-    sc_ref = librosa.feature.spectral_centroid(y=y_ref, sr=sr)[0]
+    # Spectral centroid (ref cached)
     sc_ren = librosa.feature.spectral_centroid(y=y_ren, sr=sr)[0]
-    nc = min(len(sc_ref), len(sc_ren))
-    metrics['spectral_centroid'] = float(np.mean(np.abs(sc_ref[:nc] - sc_ren[:nc])) / (sr / 2))
+    nc = min(len(ref['sc']), len(sc_ren))
+    metrics['spectral_centroid'] = float(np.mean(np.abs(ref['sc'][:nc] - sc_ren[:nc])) / (sr / 2))
 
-    # MFCC
-    mfcc_ref = librosa.feature.mfcc(y=y_ref, sr=sr, n_mfcc=13)
+    # MFCC (ref cached)
     mfcc_ren = librosa.feature.mfcc(y=y_ren, sr=sr, n_mfcc=13)
-    dist = np.linalg.norm(np.mean(mfcc_ref, axis=1) - np.mean(mfcc_ren, axis=1))
+    dist = np.linalg.norm(ref['mfcc_mean'] - np.mean(mfcc_ren, axis=1))
     metrics['mfcc'] = min(dist / 200, 1.0)
 
-    # Onset density
-    onsets_ref = librosa.onset.onset_detect(y=y_ref, sr=sr)
+    # Onset density (ref cached)
     onsets_ren = librosa.onset.onset_detect(y=y_ren, sr=sr)
-    rate_ref = len(onsets_ref) / max(len(y_ref)/sr, 0.1)
     rate_ren = len(onsets_ren) / max(len(y_ren)/sr, 0.1)
-    if rate_ref == 0 and rate_ren == 0:
+    if ref['onset_rate'] == 0 and rate_ren == 0:
         metrics['onset_density'] = 0.0
     else:
-        metrics['onset_density'] = abs(rate_ref - rate_ren) / max(rate_ref, rate_ren)
+        metrics['onset_density'] = abs(ref['onset_rate'] - rate_ren) / max(ref['onset_rate'], rate_ren)
 
-    # IOI histogram
+    # IOI histogram (ref cached)
     from scipy.stats import wasserstein_distance
-    onsets_ref_t = librosa.onset.onset_detect(y=y_ref, sr=sr, units='time')
     onsets_ren_t = librosa.onset.onset_detect(y=y_ren, sr=sr, units='time')
-    if len(onsets_ref_t) < 3 or len(onsets_ren_t) < 3:
+    if len(ref['onsets_t']) < 3 or len(onsets_ren_t) < 3:
         metrics['ioi_histogram'] = 1.0
     else:
-        ioi_ref = np.diff(onsets_ref_t)
+        ioi_ref = np.diff(ref['onsets_t'])
         ioi_ren = np.diff(onsets_ren_t)
         max_ioi = max(np.max(ioi_ref), np.max(ioi_ren), 0.01)
         metrics['ioi_histogram'] = min(wasserstein_distance(ioi_ref, ioi_ren) / max_ioi, 1.0)
 
-    # RMS correlation
+    # RMS correlation (ref cached)
     fl = int(sr * 0.05)
     hl = fl // 2
-    rms_ref = librosa.feature.rms(y=y_ref, frame_length=fl, hop_length=hl)[0]
     rms_ren = librosa.feature.rms(y=y_ren, frame_length=fl, hop_length=hl)[0]
-    nr = min(len(rms_ref), len(rms_ren))
-    if np.std(rms_ref[:nr]) < 1e-8 or np.std(rms_ren[:nr]) < 1e-8:
+    nr = min(len(ref['rms']), len(rms_ren))
+    if np.std(ref['rms'][:nr]) < 1e-8 or np.std(rms_ren[:nr]) < 1e-8:
         metrics['rms_correlation'] = 1.0
     else:
-        corr = np.corrcoef(rms_ref[:nr], rms_ren[:nr])[0, 1]
+        corr = np.corrcoef(ref['rms'][:nr], rms_ren[:nr])[0, 1]
         metrics['rms_correlation'] = max(0, 1 - corr)
 
-    # Pitch class
-    ch_ref = librosa.feature.chroma_stft(y=y_ref, sr=sr)
+    # Pitch class (ref cached)
     ch_ren = librosa.feature.chroma_stft(y=y_ren, sr=sr)
-    hr = np.mean(ch_ref, axis=1)
     hn = np.mean(ch_ren, axis=1)
-    dot = np.dot(hr, hn)
-    norm = np.linalg.norm(hr) * np.linalg.norm(hn)
+    dot = np.dot(ref['chroma_mean'], hn)
+    norm = np.linalg.norm(ref['chroma_mean']) * np.linalg.norm(hn)
     metrics['pitch_class'] = max(0, 1 - dot/norm) if norm > 1e-8 else 1.0
 
-    # Spectral rolloff
-    ro_ref = librosa.feature.spectral_rolloff(y=y_ref, sr=sr)[0]
+    # Spectral rolloff (ref cached)
     ro_ren = librosa.feature.spectral_rolloff(y=y_ren, sr=sr)[0]
-    nro = min(len(ro_ref), len(ro_ren))
-    metrics['spectral_rolloff'] = float(np.mean(np.abs(ro_ref[:nro] - ro_ren[:nro])) / (sr/2))
+    nro = min(len(ref['rolloff']), len(ro_ren))
+    metrics['spectral_rolloff'] = float(np.mean(np.abs(ref['rolloff'][:nro] - ro_ren[:nro])) / (sr/2))
+
+    # Mel spectrogram distance
+    mel_dist = compute_mel_distance(y_ren, y_ref, sr)
+    metrics['mel_distance'] = mel_dist
 
     weights = {
         'spectral_centroid': 0.15, 'mfcc': 0.25, 'onset_density': 0.10,
@@ -419,6 +503,7 @@ def compute_composite(y_ren, y_ref, sr=COMPARE_SR):
         'spectral_rolloff': 0.15,
     }
     composite = sum(metrics[k] * weights[k] for k in weights)
+
     return composite, metrics
 
 
@@ -540,6 +625,11 @@ BLOCKS = {
         'harm_1_db', 'harm_2_db', 'harm_3_db', 'harm_4_db', 'harm_5_db',
         'harm_6_db', 'harm_7_db', 'harm_8_db', 'harm_9_db',
     ],
+    'C_body': [
+        'body_res_1_freq', 'body_res_1_q', 'body_res_1_amp',
+        'body_res_2_freq', 'body_res_2_q', 'body_res_2_amp',
+        'harm_decay_slope', 'attack_brightness',
+    ],
     'C_eq': [
         'eq_low_gain_db', 'eq_low_freq',
         'eq_mid_gain_db', 'eq_mid_freq',
@@ -602,7 +692,7 @@ def optimize_block_cmaes(block_name, x_full, patterns, y_ref_compare, budget=200
         x_candidate = x_full.copy()
         x_candidate[indices] = x_block
         try:
-            y_ren = render_with_params(x_candidate, patterns, fast=True)
+            y_ren = render_with_params(x_candidate, patterns, fast=False)
             composite, _ = compute_composite(y_ren, y_ref_compare)
             if composite < best_composite[0]:
                 best_composite[0] = composite
@@ -668,7 +758,7 @@ def optimize_joint_cmaes(x_full, patterns, y_ref_compare, budget=500):
         eval_count[0] += 1
         x = from_unit(np.clip(u, 0, 1))
         try:
-            y_ren = render_with_params(x, patterns, fast=True)
+            y_ren = render_with_params(x, patterns, fast=False)
             composite, _ = compute_composite(y_ren, y_ref_compare)
             if composite < best_composite[0]:
                 best_composite[0] = composite
@@ -755,7 +845,7 @@ def main():
     # Initial evaluation
     print("\nInitial evaluation...")
     t0 = time.time()
-    y_init = render_with_params(x, patterns, fast=True)
+    y_init = render_with_params(x, patterns, fast=False)
     c_init, m_init = compute_composite(y_init, y_ref_compare)
     t_eval = time.time() - t0
     print(f"  Composite: {c_init:.4f} ({t_eval:.1f}s per eval)")
@@ -788,10 +878,10 @@ def main():
 
                 # Test inferred vs current
                 print("  Comparing inferred vs current patterns...")
-                y_inferred = render_with_params(x, inferred, fast=True)
+                y_inferred = render_with_params(x, inferred, fast=False)
                 c_inferred, _ = compute_composite(y_inferred, y_ref_compare)
 
-                y_current = render_with_params(x, patterns, fast=True)
+                y_current = render_with_params(x, patterns, fast=False)
                 c_current, _ = compute_composite(y_current, y_ref_compare)
 
                 print(f"    Current:  {c_current:.4f}")
