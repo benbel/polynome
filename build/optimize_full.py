@@ -399,89 +399,160 @@ def apply_delay(mix, p, sr):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Distance computation (with reference caching for speed)
+# Multi-scale spectral loss (perceptual distance metric)
+#
+# Used by HiFi-GAN, EnCodec, SoundStream etc. Captures perceptual similarity
+# across multiple time scales without hand-tuned feature weights.
 # ══════════════════════════════════════════════════════════════════════════════
 
+# FFT sizes for multi-scale analysis: from fine (short window, good time
+# resolution) to coarse (long window, good frequency resolution)
+_MS_FFT_SIZES = [256, 512, 1024, 2048, 4096]
+_MS_HOP_DIVISOR = 4  # hop = fft_size / 4
+
+_ref_spec_cache = {}
+
+
+def _compute_stft_mag(y, n_fft, hop_length):
+    """Compute STFT magnitude spectrogram."""
+    S = librosa.stft(y, n_fft=n_fft, hop_length=hop_length)
+    return np.abs(S)
+
+
+def _get_ref_spectrograms(y_ref, sr):
+    """Compute and cache multi-scale spectrograms for reference audio."""
+    key = (len(y_ref), sr)
+    if key in _ref_spec_cache:
+        return _ref_spec_cache[key]
+
+    specs = {}
+    for n_fft in _MS_FFT_SIZES:
+        hop = n_fft // _MS_HOP_DIVISOR
+        mag = _compute_stft_mag(y_ref, n_fft, hop)
+        specs[n_fft] = {
+            'mag': mag,
+            'log_mag': np.log(mag + 1e-7),
+        }
+
+    # Also cache mel spectrograms at multiple scales for mel loss
+    for n_mels in [32, 64, 128]:
+        for n_fft in [1024, 2048]:
+            hop = n_fft // _MS_HOP_DIVISOR
+            mel = librosa.feature.melspectrogram(
+                y=y_ref, sr=sr, n_fft=n_fft, hop_length=hop, n_mels=n_mels)
+            mel_db = librosa.power_to_db(mel + 1e-10)
+            specs[f'mel_{n_mels}_{n_fft}'] = mel_db
+
+    _ref_spec_cache[key] = specs
+    return specs
+
+
+# Legacy feature cache (for diagnostic metrics)
 _ref_features_cache = {}
 
 
 def _get_ref_features(y_ref, sr):
-    """Compute and cache all reference audio features (computed once)."""
+    """Compute and cache reference features for diagnostic metrics."""
     key = (len(y_ref), sr)
     if key in _ref_features_cache:
         return _ref_features_cache[key]
 
     feats = {}
-    feats['sc'] = librosa.feature.spectral_centroid(y=y_ref, sr=sr)[0]
     feats['mfcc_mean'] = np.mean(librosa.feature.mfcc(y=y_ref, sr=sr, n_mfcc=13), axis=1)
-    feats['onsets'] = librosa.onset.onset_detect(y=y_ref, sr=sr)
     feats['onsets_t'] = librosa.onset.onset_detect(y=y_ref, sr=sr, units='time')
-    feats['onset_rate'] = len(feats['onsets']) / max(len(y_ref)/sr, 0.1)
+    feats['onset_rate'] = len(feats['onsets_t']) / max(len(y_ref)/sr, 0.1)
     fl = int(sr * 0.05)
     hl = fl // 2
     feats['rms'] = librosa.feature.rms(y=y_ref, frame_length=fl, hop_length=hl)[0]
     feats['chroma_mean'] = np.mean(librosa.feature.chroma_stft(y=y_ref, sr=sr), axis=1)
-    feats['rolloff'] = librosa.feature.spectral_rolloff(y=y_ref, sr=sr)[0]
-    feats['mel_db'] = librosa.power_to_db(
-        librosa.feature.melspectrogram(y=y_ref, sr=sr, n_mels=128) + 1e-10)
 
     _ref_features_cache[key] = feats
     return feats
 
 
-def compute_mel_distance(y_ren, y_ref, sr=COMPARE_SR):
-    """Compute normalized Frobenius distance between 128-band log-mel spectrograms."""
-    ref = _get_ref_features(y_ref, sr)
-    S_ref_db = ref['mel_db']
+def compute_spectral_loss(y_ren, y_ref, sr=COMPARE_SR):
+    """Multi-scale spectral convergence + log-magnitude L1 loss.
 
+    This is the standard loss used by neural audio synthesis models.
+    Returns a single scalar distance that correlates with perceptual quality.
+    """
+    ref_specs = _get_ref_spectrograms(y_ref, sr)
     n = min(len(y_ref), len(y_ren))
-    S_ren = librosa.feature.melspectrogram(y=y_ren[:n], sr=sr, n_mels=128)
-    S_ren_db = librosa.power_to_db(S_ren + 1e-10)
+    y_ren = y_ren[:n]
 
-    n_frames = min(S_ref_db.shape[1], S_ren_db.shape[1])
-    dist = np.linalg.norm(S_ref_db[:, :n_frames] - S_ren_db[:, :n_frames]) / np.sqrt(n_frames * 128)
-    return float(dist)
+    total_loss = 0.0
+    n_scales = 0
+
+    for n_fft in _MS_FFT_SIZES:
+        hop = n_fft // _MS_HOP_DIVISOR
+        mag_ren = _compute_stft_mag(y_ren, n_fft, hop)
+        mag_ref = ref_specs[n_fft]['mag']
+        log_ref = ref_specs[n_fft]['log_mag']
+
+        n_frames = min(mag_ref.shape[1], mag_ren.shape[1])
+        mr = mag_ref[:, :n_frames]
+        mx = mag_ren[:, :n_frames]
+
+        # Spectral convergence: Frobenius norm of difference / norm of reference
+        sc = np.linalg.norm(mr - mx) / (np.linalg.norm(mr) + 1e-7)
+
+        # Log-magnitude L1: mean absolute difference of log magnitudes
+        log_mx = np.log(mx + 1e-7)
+        log_l1 = np.mean(np.abs(log_ref[:, :n_frames] - log_mx))
+
+        total_loss += sc + log_l1 / 10.0  # scale log_l1 to similar range
+        n_scales += 1
+
+    # Multi-scale mel loss (captures timbral similarity)
+    for n_mels in [32, 64, 128]:
+        for n_fft in [1024, 2048]:
+            hop = n_fft // _MS_HOP_DIVISOR
+            mel_ren = librosa.feature.melspectrogram(
+                y=y_ren, sr=sr, n_fft=n_fft, hop_length=hop, n_mels=n_mels)
+            mel_ren_db = librosa.power_to_db(mel_ren + 1e-10)
+            mel_ref_db = ref_specs[f'mel_{n_mels}_{n_fft}']
+
+            n_frames = min(mel_ref_db.shape[1], mel_ren_db.shape[1])
+            mel_l1 = np.mean(np.abs(
+                mel_ref_db[:, :n_frames] - mel_ren_db[:, :n_frames]))
+
+            total_loss += mel_l1 / 20.0  # scale to similar range as spectral convergence
+            n_scales += 1
+
+    return total_loss / n_scales
 
 
 def compute_composite(y_ren, y_ref, sr=COMPARE_SR):
-    """Compute composite distance matching compare_audio.py methodology.
-    Uses cached reference features for speed."""
-    ref = _get_ref_features(y_ref, sr)
+    """Compute perceptual distance using multi-scale spectral loss.
+
+    Primary metric: multi-scale spectral convergence + mel loss.
+    Also computes diagnostic sub-metrics for monitoring.
+    """
     n = min(len(y_ref), len(y_ren))
     y_ren = y_ren[:n]
 
     metrics = {}
 
-    # Spectral centroid (ref cached)
-    sc_ren = librosa.feature.spectral_centroid(y=y_ren, sr=sr)[0]
-    nc = min(len(ref['sc']), len(sc_ren))
-    metrics['spectral_centroid'] = float(np.mean(np.abs(ref['sc'][:nc] - sc_ren[:nc])) / (sr / 2))
+    # Primary: multi-scale spectral loss
+    metrics['spectral_loss'] = compute_spectral_loss(y_ren, y_ref, sr)
 
-    # MFCC (ref cached)
+    # Diagnostic sub-metrics (not used for optimization, just monitoring)
+    ref = _get_ref_features(y_ref, sr)
+
+    # MFCC distance
     mfcc_ren = librosa.feature.mfcc(y=y_ren, sr=sr, n_mfcc=13)
-    dist = np.linalg.norm(ref['mfcc_mean'] - np.mean(mfcc_ren, axis=1))
-    metrics['mfcc'] = min(dist / 200, 1.0)
+    metrics['mfcc'] = min(
+        float(np.linalg.norm(ref['mfcc_mean'] - np.mean(mfcc_ren, axis=1))) / 200, 1.0)
 
-    # Onset density (ref cached)
-    onsets_ren = librosa.onset.onset_detect(y=y_ren, sr=sr)
-    rate_ren = len(onsets_ren) / max(len(y_ren)/sr, 0.1)
+    # Onset density
+    onsets_ren_t = librosa.onset.onset_detect(y=y_ren, sr=sr, units='time')
+    rate_ren = len(onsets_ren_t) / max(len(y_ren)/sr, 0.1)
     if ref['onset_rate'] == 0 and rate_ren == 0:
         metrics['onset_density'] = 0.0
     else:
         metrics['onset_density'] = abs(ref['onset_rate'] - rate_ren) / max(ref['onset_rate'], rate_ren)
 
-    # IOI histogram (ref cached)
-    from scipy.stats import wasserstein_distance
-    onsets_ren_t = librosa.onset.onset_detect(y=y_ren, sr=sr, units='time')
-    if len(ref['onsets_t']) < 3 or len(onsets_ren_t) < 3:
-        metrics['ioi_histogram'] = 1.0
-    else:
-        ioi_ref = np.diff(ref['onsets_t'])
-        ioi_ren = np.diff(onsets_ren_t)
-        max_ioi = max(np.max(ioi_ref), np.max(ioi_ren), 0.01)
-        metrics['ioi_histogram'] = min(wasserstein_distance(ioi_ref, ioi_ren) / max_ioi, 1.0)
-
-    # RMS correlation (ref cached)
+    # RMS correlation
     fl = int(sr * 0.05)
     hl = fl // 2
     rms_ren = librosa.feature.rms(y=y_ren, frame_length=fl, hop_length=hl)[0]
@@ -489,31 +560,18 @@ def compute_composite(y_ren, y_ref, sr=COMPARE_SR):
     if np.std(ref['rms'][:nr]) < 1e-8 or np.std(rms_ren[:nr]) < 1e-8:
         metrics['rms_correlation'] = 1.0
     else:
-        corr = np.corrcoef(ref['rms'][:nr], rms_ren[:nr])[0, 1]
+        corr = float(np.corrcoef(ref['rms'][:nr], rms_ren[:nr])[0, 1])
         metrics['rms_correlation'] = max(0, 1 - corr)
 
-    # Pitch class (ref cached)
+    # Pitch class similarity
     ch_ren = librosa.feature.chroma_stft(y=y_ren, sr=sr)
     hn = np.mean(ch_ren, axis=1)
     dot = np.dot(ref['chroma_mean'], hn)
     norm = np.linalg.norm(ref['chroma_mean']) * np.linalg.norm(hn)
     metrics['pitch_class'] = max(0, 1 - dot/norm) if norm > 1e-8 else 1.0
 
-    # Spectral rolloff (ref cached)
-    ro_ren = librosa.feature.spectral_rolloff(y=y_ren, sr=sr)[0]
-    nro = min(len(ref['rolloff']), len(ro_ren))
-    metrics['spectral_rolloff'] = float(np.mean(np.abs(ref['rolloff'][:nro] - ro_ren[:nro])) / (sr/2))
-
-    # Mel spectrogram distance
-    mel_dist = compute_mel_distance(y_ren, y_ref, sr)
-    metrics['mel_distance'] = mel_dist
-
-    weights = {
-        'spectral_centroid': 0.15, 'mfcc': 0.25, 'onset_density': 0.10,
-        'ioi_histogram': 0.10, 'rms_correlation': 0.15, 'pitch_class': 0.10,
-        'spectral_rolloff': 0.15,
-    }
-    composite = sum(metrics[k] * weights[k] for k in weights)
+    # Composite = spectral loss (the perceptual metric drives optimization)
+    composite = metrics['spectral_loss']
 
     return composite, metrics
 

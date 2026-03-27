@@ -30,7 +30,7 @@ def main():
         for row in reader:
             iterations.append(int(row['iteration']))
             composites.append(float(row['composite']))
-            descriptions.append(row.get('description', ''))
+            descriptions.append(row.get('description', row.get('strategy', '')))
 
     import matplotlib
     if args.save:
