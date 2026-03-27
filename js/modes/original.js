@@ -88,7 +88,7 @@ export default {
   },
 
   effects: {
-    reverbWet: 0.20,
+    reverbWet: 0.08,
     reverbDark: 0.35,
     reverbLength: 2.0,
     delayL: 0.33,
