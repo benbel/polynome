@@ -196,8 +196,16 @@ def render(steps_per_pattern=64, step_ms=450, sr=SR):
     print('  Applying reverb...')
     mix = apply_reverb(mix, ir, sr)
 
-    # Normalize
+    # Normalize — target RMS to match reference loudness
     mix = normalize(mix, 0.85)
+    # Boost RMS to ~0.20 (reference level) while avoiding clipping
+    current_rms = np.sqrt(np.mean(mix ** 2))
+    if current_rms > 0:
+        target_rms = 0.20
+        gain = target_rms / current_rms
+        mix *= gain
+        # Soft clip to avoid harsh clipping
+        mix = np.tanh(mix)
     return mix
 
 
