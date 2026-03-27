@@ -84,7 +84,7 @@ export default {
   melodyInstruments: [],
 
   fx: {
-    tone: { delay: 0.15, reverb: 0.25, gain: 0.35 },
+    tone: { delay: 0.15, reverb: 0.25, gain: 0.50 },
   },
 
   effects: {

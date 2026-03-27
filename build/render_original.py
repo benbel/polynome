@@ -79,7 +79,7 @@ PATTERNS = [
 
 # ── Effects config (matches original.js) ────────────────────────────────────
 
-FX_GAIN = 0.35
+FX_GAIN = 0.50
 FX_DELAY = 0.15
 FX_REVERB = 0.25
 
