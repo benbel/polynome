@@ -102,7 +102,7 @@ export default {
 
   // Wide range: C5 down to C3 (~2 octaves)
   mainFreqs: [523, 440, 370, 311, 262, 220, 175, 131],
-  defaultStepMs: 450,
+  defaultStepMs: 296,
   numPatterns: 26,
   cellSize: 28,
   seqLen: SEQ_LEN,
