@@ -72,6 +72,10 @@ def gen_tone(freq, env_profile, sr=SR):
     # Gentle warmth — minimal asymmetric saturation
     sig = asymmetric_saturate(sig, drive=1.20, asymmetry=0.05)
 
+    # High-frequency boost to match reference brightness
+    sig_hp = highpass(sig, 2000, sr) * 0.5
+    sig = sig + sig_hp
+
     sig = normalize(sig, 0.85)
     fade_in(sig, env_profile['attack_ms'], sr)
     fade_out(sig, 40, sr)
