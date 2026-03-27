@@ -383,10 +383,11 @@ export function tick() {
           const c = parseInt(cs);
           const a = oA[k];
           const fires = mode.colSeqs
-            ? seqTrigger(mode, c, s.step)
+            ? seqTrigger(mode, c, s.step - (g.cols - 1))
             : mod(s.step - a.offset - (g.cols - 1), g.cols - c) === 0;
           if (fires) {
-            const vol = mode.stepVels ? a.vol * mode.stepVels[mod(s.step, mode.seqLen)] : a.vol;
+            const tIdx = mod(s.step - (g.cols - 1), mode.seqLen);
+            const vol = mode.stepVels ? a.vol * mode.stepVels[tIdx] : a.vol;
             playNote(oI, parseInt(rs), vol * oldV * rhythmBal, t);
           }
         }
@@ -419,8 +420,9 @@ export function tick() {
       const r = parseInt(rs), c = parseInt(cs);
       const a = g.active[k];
       if (useSeq) {
-        if (mode.colSeqs[c][seqIdx]) {
-          const vol = mode.stepVels ? a.vol * mode.stepVels[seqIdx] : a.vol;
+        const trigIdx = mod(seqIdx - (g.cols - 1), mode.seqLen);
+        if (mode.colSeqs[c][trigIdx]) {
+          const vol = mode.stepVels ? a.vol * mode.stepVels[trigIdx] : a.vol;
           playNote(g.instrument, r, vol * newV * rhythmBal, t);
           trig[r] = true;
         }
