@@ -202,15 +202,14 @@ def render(steps_per_pattern=64, step_ms=450, sr=SR):
         target_rms = 0.20
         gain = target_rms / current_rms
         mix *= gain
-        # Hard clip at ±0.95 to avoid distortion
         mix = np.clip(mix, -0.95, 0.95)
     return mix
 
 
 def main():
     parser = argparse.ArgumentParser(description='Render original mode offline')
-    parser.add_argument('--steps-per-pattern', type=int, default=32)
-    parser.add_argument('--step-ms', type=float, default=148)
+    parser.add_argument('--steps-per-pattern', type=int, default=48)
+    parser.add_argument('--step-ms', type=float, default=99)
     parser.add_argument('--output', default=None)
     args = parser.parse_args()
 
