@@ -70,7 +70,7 @@ def gen_tone(freq, env_profile, sr=SR):
     sig[:len(atk)] += atk[:min(len(atk), n)]
 
     # Gentle warmth — minimal asymmetric saturation
-    sig = asymmetric_saturate(sig, drive=1.08, asymmetry=0.03)
+    sig = asymmetric_saturate(sig, drive=1.20, asymmetry=0.05)
 
     sig = normalize(sig, 0.85)
     fade_in(sig, env_profile['attack_ms'], sr)
