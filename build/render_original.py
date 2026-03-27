@@ -211,8 +211,8 @@ def render(steps_per_pattern=64, step_ms=450, sr=SR):
 
 def main():
     parser = argparse.ArgumentParser(description='Render original mode offline')
-    parser.add_argument('--steps-per-pattern', type=int, default=16)
-    parser.add_argument('--step-ms', type=float, default=296)
+    parser.add_argument('--steps-per-pattern', type=int, default=32)
+    parser.add_argument('--step-ms', type=float, default=148)
     parser.add_argument('--output', default=None)
     args = parser.parse_args()
 
