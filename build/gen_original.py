@@ -73,7 +73,7 @@ def gen_tone(freq, env_profile, sr=SR):
     sig = asymmetric_saturate(sig, drive=1.20, asymmetry=0.05)
 
     # High-frequency boost to match reference brightness
-    sig_hp = highpass(sig, 2000, sr) * 0.5
+    sig_hp = highpass(sig, 1500, sr) * 1.0
     sig = sig + sig_hp
 
     sig = normalize(sig, 0.85)
