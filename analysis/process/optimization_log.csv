@@ -1,0 +1,3 @@
+iteration,composite,timestamp,strategy,mfcc,onset_density,pitch_class,rms_correlation,spectral_loss
+1,0.704813,2026-03-27 21:33:41,blocks_focused,0.242060,0.246616,0.121678,0.309294,0.704813
+2,0.671362,2026-03-27 22:33:23,blocks_focused,0.148630,0.210506,0.075376,0.262769,0.671362
