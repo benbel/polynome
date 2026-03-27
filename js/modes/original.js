@@ -27,8 +27,8 @@ export const COL_SEQS = [
 
 // Step velocities from the amxd (normalized to 0–1)
 export const STEP_VELS = [
-  127, 36, 64, 36, 127, 36, 64, 36,
-  127, 36, 72, 36, 127, 36, 90, 36,
+  127, 64, 90, 64, 127, 64, 90, 64,
+  127, 64, 90, 64, 127, 64, 90, 64,
 ].map(v => v / 127);
 
 const SEQ_LEN = 16;
