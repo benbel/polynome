@@ -100,17 +100,24 @@ PARAM_SPEC = [
     ('harm_7_db',      -16.8,  -50.0,   0.0),
     ('harm_8_db',      -30.0,  -60.0,   0.0),
     ('harm_9_db',      -40.8,  -60.0,   0.0),
-    # Effects (run 2 kept run 1 values)
+    # Post-mix spectral shaping EQ (3-band parametric — new)
+    ('eq_low_gain_db',   0.0, -12.0,  12.0),  # gain at low freq
+    ('eq_low_freq',    250.0,  80.0, 500.0),   # low band center
+    ('eq_mid_gain_db',   0.0, -12.0,  12.0),   # gain at mid freq
+    ('eq_mid_freq',    800.0, 300.0, 3000.0),   # mid band center
+    ('eq_hi_gain_db',    0.0, -12.0,  12.0),    # gain at high freq
+    ('eq_hi_freq',    3000.0, 1500.0, 8000.0),  # high band center
+    # Effects
     ('reverb_wet',      0.118,  0.0,    0.5),
     ('reverb_length',   1.75,   0.2,    3.0),
     ('reverb_dark',     0.371,  0.0,    0.9),
     ('delay_wet',       0.087,  0.0,    0.5),
     ('delay_feedback',  0.067,  0.0,    0.7),
     ('delay_dark_lp',   1502,   500,   8000),
-    # Timing & level (run 2 optimized)
+    # Timing & level
     ('step_ms',         61.5,   50.0,  120.0),
     ('target_rms',      0.37,   0.10,   0.60),
-    # Frequencies (run 1/2 optimized, kept)
+    # Frequencies
     ('freq_0',          448,    200,    800),
     ('freq_1',          540,    150,    800),
     ('freq_2',          585,    200,    800),
@@ -242,7 +249,24 @@ def render_with_params(x, patterns, fast=False):
                     mix[offset:end, 1] += sample[:length] * vol
             global_step += 1
 
-    # Delay (vectorized for fast mode)
+    # Post-mix parametric EQ (shapes MFCC[2-3])
+    from scipy.signal import butter, sosfilt
+    for band_prefix in ['eq_low', 'eq_mid', 'eq_hi']:
+        gain_db = p.get(band_prefix + '_gain_db', 0.0)
+        freq = p.get(band_prefix + '_freq', 1000.0)
+        if abs(gain_db) > 0.1 and 20 < freq < sr / 2 - 1:
+            gain_lin = 10 ** (gain_db / 20)
+            # Bell filter: extract band, scale, add back
+            bw = freq * 0.7  # bandwidth ~0.7 octave
+            low = max(20, freq - bw / 2)
+            high = min(sr / 2 - 1, freq + bw / 2)
+            if high > low + 10:
+                sos = butter(2, [low, high], btype='band', fs=sr, output='sos')
+                for ch in range(2):
+                    band = sosfilt(sos, mix[:, ch])
+                    mix[:, ch] += band * (gain_lin - 1)
+
+    # Delay
     mix = apply_delay(mix, p, sr)
 
     # Reverb (deterministic seed for reproducibility)
@@ -516,15 +540,20 @@ BLOCKS = {
         'harm_1_db', 'harm_2_db', 'harm_3_db', 'harm_4_db', 'harm_5_db',
         'harm_6_db', 'harm_7_db', 'harm_8_db', 'harm_9_db',
     ],
-    'C_effects': [
+    'C_eq': [
+        'eq_low_gain_db', 'eq_low_freq',
+        'eq_mid_gain_db', 'eq_mid_freq',
+        'eq_hi_gain_db', 'eq_hi_freq',
+    ],
+    'D_effects': [
         'reverb_wet', 'reverb_length', 'reverb_dark',
         'delay_wet', 'delay_feedback', 'delay_dark_lp',
     ],
-    'D_frequencies': [
+    'E_frequencies': [
         'freq_0', 'freq_1', 'freq_2', 'freq_3',
         'freq_4', 'freq_5', 'freq_6', 'freq_7',
     ],
-    'E_timing': [
+    'F_timing': [
         'step_ms', 'target_rms',
     ],
 }
