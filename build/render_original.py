@@ -39,8 +39,8 @@ COL_SEQS = [
 ]
 
 STEP_VELS = [
-    127, 36, 64, 36, 127, 36, 64, 36,
-    127, 36, 72, 36, 127, 36, 90, 36,
+    127, 64, 90, 64, 127, 64, 90, 64,
+    127, 64, 90, 64, 127, 64, 90, 64,
 ]
 STEP_VELS = [v / 127 for v in STEP_VELS]
 
@@ -79,7 +79,7 @@ PATTERNS = [
 
 # ── Effects config (matches original.js) ────────────────────────────────────
 
-FX_GAIN = 0.35
+FX_GAIN = 1.0
 FX_DELAY = 0.15
 FX_REVERB = 0.25
 
@@ -89,8 +89,8 @@ DELAY_FEEDBACK = 0.25
 DELAY_DARK_LP = 3000
 DELAY_WET = 0.15
 
-REVERB_WET = 0.20
-REVERB_LENGTH = 2.0
+REVERB_WET = 0.08
+REVERB_LENGTH = 1.0
 REVERB_DARK = 0.35
 
 
@@ -196,15 +196,20 @@ def render(steps_per_pattern=64, step_ms=450, sr=SR):
     print('  Applying reverb...')
     mix = apply_reverb(mix, ir, sr)
 
-    # Normalize
-    mix = normalize(mix, 0.85)
+    # Normalize — target RMS to match reference loudness
+    current_rms = np.sqrt(np.mean(mix ** 2))
+    if current_rms > 0:
+        target_rms = 0.30
+        gain = target_rms / current_rms
+        mix *= gain
+        mix = np.clip(mix, -0.95, 0.95)
     return mix
 
 
 def main():
     parser = argparse.ArgumentParser(description='Render original mode offline')
     parser.add_argument('--steps-per-pattern', type=int, default=64)
-    parser.add_argument('--step-ms', type=float, default=450)
+    parser.add_argument('--step-ms', type=float, default=74)
     parser.add_argument('--output', default=None)
     args = parser.parse_args()
 

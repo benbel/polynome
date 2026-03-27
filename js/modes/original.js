@@ -27,8 +27,8 @@ export const COL_SEQS = [
 
 // Step velocities from the amxd (normalized to 0–1)
 export const STEP_VELS = [
-  127, 36, 64, 36, 127, 36, 64, 36,
-  127, 36, 72, 36, 127, 36, 90, 36,
+  127, 64, 90, 64, 127, 64, 90, 64,
+  127, 64, 90, 64, 127, 64, 90, 64,
 ].map(v => v / 127);
 
 const SEQ_LEN = 16;
@@ -84,13 +84,13 @@ export default {
   melodyInstruments: [],
 
   fx: {
-    tone: { delay: 0.15, reverb: 0.25, gain: 0.35 },
+    tone: { delay: 0.15, reverb: 0.25, gain: 1.0 },
   },
 
   effects: {
-    reverbWet: 0.20,
+    reverbWet: 0.08,
     reverbDark: 0.35,
-    reverbLength: 2.0,
+    reverbLength: 1.0,
     delayL: 0.33,
     delayR: 0.22,
     delayFeedback: 0.25,
@@ -101,8 +101,8 @@ export default {
   },
 
   // Wide range: C5 down to C3 (~2 octaves)
-  mainFreqs: [523, 440, 370, 311, 262, 220, 175, 131],
-  defaultStepMs: 450,
+  mainFreqs: [587, 494, 415, 349, 294, 247, 196, 147],
+  defaultStepMs: 74,
   numPatterns: 26,
   cellSize: 28,
   seqLen: SEQ_LEN,

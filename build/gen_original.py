@@ -13,15 +13,15 @@ from common import (
     to_stereo, mix_stereo, export_ogg, write_manifest, generate_reverb_ir,
 )
 
-DEFAULT_FREQS = [523, 440, 370, 311, 262, 220, 175, 131]
+DEFAULT_FREQS = [587, 494, 415, 349, 294, 247, 196, 147]
 
 # Warm, woody tone — marimba-like with body resonance
 DEFAULT_ENVELOPE = {
     'attack_ms': 1.5,
-    'decay_time': 0.6,
-    'harmonic_ratios': [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0],
-    'harmonic_amplitudes_db': [0, -4, -9, -14, -20, -26, -34],
-    'inharmonicity_cents': [0, 6, -2, 10, -4, 5, -7],
+    'decay_time': 0.45,
+    'harmonic_ratios': [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 10.0, 12.0],
+    'harmonic_amplitudes_db': [0, -3, -6, -10, -14, -18, -22, -26, -32, -38],
+    'inharmonicity_cents': [0, 6, -2, 10, -4, 5, -7, 8, -3, 6],
 }
 
 
@@ -70,7 +70,11 @@ def gen_tone(freq, env_profile, sr=SR):
     sig[:len(atk)] += atk[:min(len(atk), n)]
 
     # Gentle warmth — minimal asymmetric saturation
-    sig = asymmetric_saturate(sig, drive=1.08, asymmetry=0.03)
+    sig = asymmetric_saturate(sig, drive=1.20, asymmetry=0.05)
+
+    # High-frequency boost to match reference brightness
+    sig_hp = highpass(sig, 1500, sr) * 1.0
+    sig = sig + sig_hp
 
     sig = normalize(sig, 0.85)
     fade_in(sig, env_profile['attack_ms'], sr)
