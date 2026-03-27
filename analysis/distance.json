@@ -1,0 +1,15 @@
+{
+  "spectral_centroid": 0.062123,
+  "mfcc": 0.29803,
+  "onset_density": 0.047059,
+  "ioi_histogram": 0.029488,
+  "rms_correlation": 0.728071,
+  "pitch_class": 0.223862,
+  "spectral_rolloff": 0.174539,
+  "composite": 0.249258,
+  "diagnosis": [
+    "spectral_rolloff HIGH \u2192 reduce saturation/comb filter, fewer harmonics",
+    "rms_correlation HIGH \u2192 dynamic shape off, check pattern order/velocity",
+    "pitch_class HIGH \u2192 frequency mismatch, check mainFreqs"
+  ]
+}
