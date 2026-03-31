@@ -21,8 +21,8 @@ if [ ! -f "$REF_WAV" ]; then
     fi
 
     if [ ! -f "$RAW_WAV" ]; then
-        echo "Extracting audio from: $VIDEO (2:58 - 4:50, original mode segment)"
-        ffmpeg -i "$VIDEO" -ss 178 -to 290 -vn -acodec pcm_s16le -ar 44100 -ac 1 "$RAW_WAV" -y -loglevel warning
+        echo "Extracting audio from: $VIDEO (2:58 - 4:26, original mode segment)"
+        ffmpeg -i "$VIDEO" -ss 178 -to 266 -vn -acodec pcm_s16le -ar 44100 -ac 1 "$RAW_WAV" -y -loglevel warning
         echo "  -> $RAW_WAV"
     else
         echo "Raw audio already exists: $RAW_WAV"
