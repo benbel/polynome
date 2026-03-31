@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bui
 
 from optimize_full import (
     PARAM_SPEC, PARAM_DEFAULTS, SR,
-    unpack_params, render_with_params,
+    unpack_params, render_stereo,
 )
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -73,18 +73,17 @@ def main():
     print(f"  Patterns: {len(patterns)}")
 
     # Render at full sample rate (stereo)
-    print(f"  Rendering at {SR}Hz...")
-    mono = render_with_params(x, patterns, fast=False)
+    print(f"  Rendering stereo at {SR}Hz...")
+    stereo = render_stereo(x, patterns, sr=SR)
 
-    # Convert to stereo 16-bit WAV
-    stereo = np.column_stack([mono, mono])
+    # Convert to 16-bit WAV
     sig16 = np.clip(stereo, -1, 1)
     sig16 = (sig16 * 32767).astype(np.int16)
 
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     wavfile.write(out_path, SR, sig16)
 
-    duration = len(mono) / SR
+    duration = stereo.shape[0] / SR
     size_mb = os.path.getsize(out_path) / 1024 / 1024
     print(f"  Written: {out_path} ({duration:.1f}s, {size_mb:.1f} MB)")
 

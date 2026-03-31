@@ -368,6 +368,112 @@ def render_with_params(x, patterns, fast=False):
     return mono
 
 
+def render_stereo(x, patterns, sr=SR):
+    """Full render pipeline returning stereo audio at native sample rate.
+
+    Unlike render_with_params (which returns mono at COMPARE_SR for the
+    optimizer), this returns the full-quality stereo mix for .wav export.
+    """
+    p = unpack_params(x)
+
+    # Pre-render samples
+    freqs = p['freqs']
+    samples = []
+    for freq in freqs:
+        sig = gen_tone_param(freq, p, sr)
+        samples.append(sig)
+
+    step_ms = p['step_ms']
+    step_samples = int(step_ms / 1000 * sr)
+    total_steps = len(patterns) * STEPS_PER_PATTERN
+    total_samples = total_steps * step_samples + max(len(s) for s in samples)
+
+    # Dry mix (stereo)
+    mix = np.zeros((total_samples, 2))
+
+    row_start_step = {}
+    global_step = 0
+    for pi, pattern in enumerate(patterns):
+        pattern_start = global_step
+        for (row, col), vel in pattern.items():
+            if row not in row_start_step:
+                row_start_step[row] = pattern_start
+
+        for local_step in range(STEPS_PER_PATTERN):
+            offset = global_step * step_samples
+            for (row, col), vel in pattern.items():
+                row_seq_idx = (global_step - row_start_step[row]) % SEQ_LEN
+                if col < len(COL_SEQS) and COL_SEQS[col][row_seq_idx]:
+                    vol = vel * STEP_VELS[row_seq_idx]
+                    sample = samples[row]
+                    end = min(offset + len(sample), total_samples)
+                    length = end - offset
+                    mix[offset:end, 0] += sample[:length] * vol
+                    mix[offset:end, 1] += sample[:length] * vol
+            global_step += 1
+
+    # Post-mix parametric EQ
+    from scipy.signal import butter, sosfilt
+    for band_prefix in ['eq_low', 'eq_mid', 'eq_hi']:
+        gain_db = p.get(band_prefix + '_gain_db', 0.0)
+        freq = p.get(band_prefix + '_freq', 1000.0)
+        if abs(gain_db) > 0.1 and 20 < freq < sr / 2 - 1:
+            gain_lin = 10 ** (gain_db / 20)
+            bw = freq * 0.7
+            low = max(20, freq - bw / 2)
+            high = min(sr / 2 - 1, freq + bw / 2)
+            if high > low + 10:
+                sos = butter(2, [low, high], btype='band', fs=sr, output='sos')
+                for ch in range(2):
+                    band = sosfilt(sos, mix[:, ch])
+                    mix[:, ch] += band * (gain_lin - 1)
+
+    # Delay
+    mix = apply_delay(mix, p, sr)
+
+    # Reverb
+    rng_state = np.random.get_state()
+    np.random.seed(42)
+    ir = generate_reverb_ir(p['reverb_length'], dark=p['reverb_dark'], sr=sr)
+    np.random.set_state(rng_state)
+    for ch in range(2):
+        wet = fftconvolve(mix[:, ch], ir[:, ch])[:mix.shape[0]]
+        mix[:, ch] += wet * p['reverb_wet']
+
+    # Reference envelope matching
+    ref_env = get_reference_envelope(sr)
+    if ref_env is not None:
+        rms_ref, ref_times, env_sr, frame_len, hop = ref_env
+        mono_tmp = np.mean(mix, axis=1)
+        from scipy.signal import resample as sig_resample
+        mono_ds = sig_resample(mono_tmp, int(len(mono_tmp) * env_sr / sr))
+        rms_ren = librosa.feature.rms(y=mono_ds, frame_length=frame_len, hop_length=hop)[0]
+        n_env = min(len(rms_ref), len(rms_ren))
+        gain_curve = np.ones(n_env)
+        for i in range(n_env):
+            if rms_ren[i] > 0.001:
+                gain_curve[i] = rms_ref[i] / rms_ren[i]
+            else:
+                gain_curve[i] = 1.0
+        from scipy.ndimage import uniform_filter1d
+        gain_curve = uniform_filter1d(gain_curve, size=8)
+        gain_curve = np.clip(gain_curve, 0.1, 5.0)
+        gain_times = np.arange(n_env) * hop / env_sr
+        sample_times = np.arange(mix.shape[0]) / sr
+        gain_interp = np.interp(sample_times, gain_times, gain_curve)
+        mix[:, 0] *= gain_interp
+        mix[:, 1] *= gain_interp
+
+    # Normalize
+    current_rms = np.sqrt(np.mean(mix ** 2))
+    if current_rms > 0:
+        gain = p['target_rms'] / current_rms
+        mix *= gain
+        mix = np.clip(mix, -0.95, 0.95)
+
+    return mix
+
+
 def apply_delay(mix, p, sr):
     """Vectorized stereo delay matching engine.js."""
     n = mix.shape[0]
