@@ -85,6 +85,44 @@ def bandpass(sig, low, high, sr=SR, order=2):
     return sosfilt(sos, sig)
 
 
+def _shelf_coeffs(freq, gain_db, sr, high):
+    A = 10 ** (gain_db / 40)
+    w0 = 2 * np.pi * np.clip(freq, 20, sr / 2 - 1) / sr
+    c = np.cos(w0)
+    beta = 2 * np.sqrt(A) * (np.sin(w0) / 2 * np.sqrt(2))
+
+    if high:
+        b = [A * ((A + 1) + (A - 1) * c + beta),
+             -2 * A * ((A - 1) + (A + 1) * c),
+             A * ((A + 1) + (A - 1) * c - beta)]
+        a = [(A + 1) - (A - 1) * c + beta,
+             2 * ((A - 1) - (A + 1) * c),
+             (A + 1) - (A - 1) * c - beta]
+    else:
+        b = [A * ((A + 1) - (A - 1) * c + beta),
+             2 * A * ((A - 1) - (A + 1) * c),
+             A * ((A + 1) - (A - 1) * c - beta)]
+        a = [(A + 1) + (A - 1) * c + beta,
+             -2 * ((A - 1) + (A + 1) * c),
+             (A + 1) + (A - 1) * c - beta]
+
+    return np.array(b) / a[0], np.array(a) / a[0]
+
+
+def high_shelf(sig, freq, gain_db, sr=SR):
+    if gain_db == 0:
+        return sig
+    b, a = _shelf_coeffs(freq, gain_db, sr, True)
+    return lfilter(b, a, sig)
+
+
+def low_shelf(sig, freq, gain_db, sr=SR):
+    if gain_db == 0:
+        return sig
+    b, a = _shelf_coeffs(freq, gain_db, sr, False)
+    return lfilter(b, a, sig)
+
+
 def filter_sweep(sig, start_freq, end_freq, sr=SR, order=4, block_size=256):
     n = len(sig)
     out = np.zeros(n)
