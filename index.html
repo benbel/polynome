@@ -7,33 +7,29 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-<div id="loading">loading...</div>
-<div id="audio-hint"></div>
+<div id="loading">loading</div>
 <div id="progress-bar"><div id="progress-fill"></div></div>
+<p id="status"></p>
 <div id="main">
   <div id="sidebar">
-    <div id="mode-col"></div>
+    <nav id="mode-col"></nav>
     <div id="ctrl-col">
-      <span id="ctl"></span>
-      <span id="gridToggle">simple</span>
-      <span id="btn-reset">reset</span>
-      <span id="btn-random">random</span>
-      <span id="btn-save">save</span>
-      <span id="btn-load">load</span>
-      <input type="range" id="speed" min="50" max="500" value="200">
-      <span id="bpm"></span>
-      <span id="cycleToggle">cycle off</span>
-      <input type="range" id="cycleLen" min="16" max="256" value="64" step="8">
-      <span id="cycleDisp"></span>
-      <input type="range" id="melN" min="1" max="8" value="2">
-      <span id="melNDisp"></span>
-      <input type="range" id="balance" min="0" max="100" value="50">
-      <span id="balDisp"></span>
-      <span id="canonToggle">canon off</span>
+      <button id="ctl">play</button>
+      <button id="gridToggle">simple</button>
+      <button id="btn-reset">reset</button>
+      <button id="btn-random">random</button>
+      <button id="btn-save">save</button>
+      <button id="btn-load">load</button>
+      <label class="ctl"><input type="range" id="speed" min="50" max="500" value="200"><span id="bpm"></span></label>
+      <button id="cycleToggle">cycle off</button>
+      <label class="ctl" id="cycleLenWrap"><input type="range" id="cycleLen" min="16" max="256" value="64" step="8"><span id="cycleDisp"></span></label>
+      <label class="ctl" id="melNWrap"><input type="range" id="melN" min="1" max="8" value="2"><span id="melNDisp"></span></label>
+      <label class="ctl" id="balanceWrap"><input type="range" id="balance" min="0" max="100" value="50"><span id="balDisp"></span></label>
+      <button id="canonToggle">canon off</button>
     </div>
     <div id="pat-col"></div>
   </div>
-  <div id="content">
+  <main id="content">
     <div id="stage"></div>
     <div id="mel-wrap">
       <div class="inst" id="mel-inst-bar"></div>
@@ -43,7 +39,7 @@
       <div class="inst" id="canon-mode-bar"></div>
       <div id="canon-grids"></div>
     </div>
-  </div>
+  </main>
 </div>
 <script type="module">
 import { initApp } from './js/ui.js';

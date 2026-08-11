@@ -1,25 +1,15 @@
-// engine.js — Core sequencer, effects chain, playback. Mode-agnostic.
+export const CELL = { OFF: 0, HALF: 1, FULL: 2, LIT: 3, TRIG: 4 };
+const CELL_CLASS = ['cell', 'cell half', 'cell on', 'cell lit', 'cell trig'];
 
-export const STYLES = {
-  OFF:  { bg: 'transparent', border: '#ebebeb', shadow: 'none' },
-  LIT:  { bg: 'rgba(255,228,188,.55)', border: 'rgba(248,215,170,.65)', shadow: '0 0 8px 2px rgba(255,222,175,.4)' },
-  HALF: { bg: 'rgba(255,220,170,.7)', border: 'rgba(242,200,148,.8)', shadow: '0 0 10px 3px rgba(255,218,165,.5)' },
-  FULL: { bg: 'rgb(255,215,160)', border: 'rgb(240,195,135)', shadow: '0 0 14px 4px rgba(255,218,165,.7), 0 0 28px 8px rgba(255,212,155,.25)' },
-  TRIG: { bg: 'rgb(250,205,145)', border: 'rgb(235,185,120)', shadow: '0 0 18px 5px rgba(255,210,150,.85), 0 0 36px 10px rgba(250,205,140,.35)' },
-};
-
-export function applyStyle(el, s) {
-  el.style.background = s.bg;
-  el.style.borderColor = s.border;
-  el.style.boxShadow = s.shadow;
-}
-
-// ======================== STATE ========================
+const TICK_MS = 25;
+const AHEAD = 0.1;
+const HIDDEN_AHEAD = 2.0;
+const FADE = 0.04;
 
 export const state = {
   ctx: null,
   step: 0,
-  timer: null,
+  visualStep: 0,
   playing: false,
   stepMs: 200,
   grids: [],
@@ -31,6 +21,9 @@ export const state = {
   delayInput: null,
   reverbInput: null,
   masterComp: null,
+  masterGain: null,
+  buses: {},
+  live: new Set(),
   patterns: [],
   currentPattern: 0,
   autoCycle: false,
@@ -38,31 +31,36 @@ export const state = {
   patButtons: [],
   melButtons: [],
   canonEnabled: false,
-  canonMode: 'simple',   // 'simple' | 'interval' | 'crab' | 'mirror' | 'table'
-  canonInterval: 4,      // rows to shift for interval canon (default: alla quarta)
-  canonOffset: 8,        // columns to shift for simple/interval canon
-  canonCells: [],       // DOM elements for canon grid
-  canonActive: {},      // computed from melActive
+  canonMode: 'simple',
+  canonInterval: 4,
+  canonOffset: 8,
+  canonCells: [],
+  canonActive: {},
   trSteps: 16,
   trRem: 0,
   oldActives: [],
   oldInsts: [],
   oldMelActive: {},
   oldMelInst: 'pad',
-  balance: 50,       // 0 = all melody, 100 = all rhythm, 50 = equal
-  simpleGrid: true,  // true = 8x16, false = full complex grids
-  mode: null,        // current mode config
-  modePatterns: {},   // per-mode pattern storage
+  balance: 50,
+  simpleGrid: true,
+  mode: null,
+  modePatterns: {},
+
+  schedTimer: null,
+  nextStepTime: 0,
+  paintQueue: [],
+  rafId: null,
+  dirty: false,
 };
 
-// ======================== EFFECTIVE GRIDS ========================
-// In simple mode, cap grids to smaller dimensions
 function melGrids() {
   const mode = state.mode;
   if (!mode || !mode.melodyGrids) return null;
   if (state.simpleGrid && mode.id !== 'original') return [{ rows: 8, cols: 32 }];
   return mode.melodyGrids;
 }
+
 function mainGridsDef() {
   const mode = state.mode;
   if (!mode) return [];
@@ -71,14 +69,19 @@ function mainGridsDef() {
   return mode.mainGrids;
 }
 
-// ======================== CANON ========================
+function mod(a, n) { return ((a % n) + n) % n; }
+
+function melTotalCols() {
+  const g = melGrids();
+  return g ? g.reduce((sum, x) => sum + x.cols, 0) : 0;
+}
 
 export function computeCanon() {
   const s = state;
   const mode = s.mode;
-  if (!mode || !melGrids() || !s.canonEnabled) { s.canonActive = {}; return; }
+  if (!mode || !melGrids() || !s.canonEnabled) { s.canonActive = {}; markDirty(); return; }
 
-  const totalCols = melGrids().reduce((sum, g) => sum + g.cols, 0);
+  const totalCols = melTotalCols();
   const melRows = melGrids()[0].rows;
   const result = {};
 
@@ -106,9 +109,8 @@ export function computeCanon() {
   }
 
   s.canonActive = result;
+  markDirty();
 }
-
-// ======================== PATTERNS ========================
 
 export function initPatterns(mode) {
   const n = mode.numPatterns || 8;
@@ -122,14 +124,12 @@ export function initPatterns(mode) {
       for (let gi = 0; gi < mainGridsDef().length; gi++) {
         p.grids[gi] = { cells: {}, instrument: mainGridsDef()[gi].defaultInstrument };
       }
-      // Default melody: single non-repeating line filling every column.
-      // No canon-like structure — canon is a separate user-enabled feature.
+
       if (i === 0 && melGrids() && melGrids().length > 0) {
-        const totalCols = melGrids().reduce((s, g) => s + g.cols, 0);
+        const totalCols = melTotalCols();
         const rows = melGrids()[0].rows;
         const mc = {};
-        // Walk through every column with gentle stepwise motion + occasional leaps.
-        // Start in the middle, wander without repeating a pattern.
+
         let pitch = Math.floor(rows / 2);
         const steps = [-1, 0, 1, -1, 1, 0, -2, 1, 1, 0, -1, 2, 0, -1, 1, -1,
                        0, 1, -1, 0, 2, -1, 0, 1, -2, 1, 0, -1, 1, 0, -1, 1];
@@ -178,7 +178,7 @@ export function loadPat(idx) {
 
   for (let gi = 0; gi < s.grids.length; gi++) {
     const g = s.grids[gi];
-    const pat = s.patterns[idx].grids[gi];
+    const pat = s.patterns[idx].grids[gi] || { cells: {}, instrument: g.instrument };
     g.active = {};
     g.instrument = pat.instrument;
     for (const b of g.buttons) b.className = b.dataset.inst === g.instrument ? 'sel' : '';
@@ -186,17 +186,11 @@ export function loadPat(idx) {
       const [, cs] = k.split('-');
       const c = parseInt(cs);
       if (mode.colSeqs) {
-        // Sequence mode: offset not used; trigger is purely sequence-driven
+
         g.active[k] = { offset: 0, vol: pat.cells[k] };
       } else {
         const period = g.cols - c;
         g.active[k] = { offset: s.step - (g.cols - 1) - Math.floor(Math.random() * period), vol: pat.cells[k] };
-      }
-    }
-    for (let r = 0; r < g.rows; r++) {
-      for (let c = 0; c < g.cols; c++) {
-        const a = g.active[r + '-' + c];
-        applyStyle(g.cells[r][c], a ? (a.vol >= 1 ? STYLES.FULL : STYLES.HALF) : STYLES.OFF);
       }
     }
   }
@@ -206,18 +200,6 @@ export function loadPat(idx) {
   s.melInstrument = mp.instrument;
   for (const b of s.melButtons) b.className = b.dataset.inst === s.melInstrument ? 'sel' : '';
   for (const k of Object.keys(mp.cells)) s.melActive[k] = { vol: mp.cells[k] };
-  if (melGrids()) {
-    const totalMelCols = melGrids().reduce((s, g) => s + g.cols, 0);
-    const melRows = melGrids()[0].rows;
-    for (let r = 0; r < melRows; r++) {
-      for (let c = 0; c < totalMelCols; c++) {
-        if (s.melCells[r] && s.melCells[r][c]) {
-          const a = s.melActive[r + '-' + c];
-          applyStyle(s.melCells[r][c], a ? (a.vol >= 1 ? STYLES.FULL : STYLES.HALF) : STYLES.OFF);
-        }
-      }
-    }
-  }
 
   s.currentPattern = idx;
   for (let i = 0; i < s.patButtons.length; i++) {
@@ -225,6 +207,7 @@ export function loadPat(idx) {
   }
 
   computeCanon();
+  markDirty();
 }
 
 export function selectPat(idx) {
@@ -232,20 +215,38 @@ export function selectPat(idx) {
   loadPat(idx);
 }
 
-// ======================== EFFECTS CHAIN ========================
+export function teardownAudio() {
+  const s = state;
+  silence();
+  for (const node of [s.masterGain, s.masterComp, s.reverbInput, s.delayInput]) {
+    if (node) node.disconnect();
+  }
+  for (const id of Object.keys(s.buses)) {
+    const b = s.buses[id];
+    b.dry.disconnect(); b.del.disconnect(); b.rev.disconnect();
+  }
+  s.buses = {};
+  s.masterGain = s.masterComp = s.reverbInput = s.delayInput = null;
+}
 
 export function buildEffects(config) {
   const ctx = state.ctx;
+  teardownAudio();
+
+  const master = ctx.createGain();
+  master.gain.value = 1;
+  master.connect(ctx.destination);
+  state.masterGain = master;
+
   const comp = ctx.createDynamicsCompressor();
   comp.threshold.value = config.compThreshold || -12;
   comp.knee.value = 4;
   comp.ratio.value = config.compRatio || 8;
   comp.attack.value = 0.002;
   comp.release.value = 0.12;
-  comp.connect(ctx.destination);
+  comp.connect(master);
   state.masterComp = comp;
 
-  // Convolution reverb
   const irLen = Math.round(ctx.sampleRate * (config.reverbLength || 3.5));
   const irBuf = ctx.createBuffer(2, irLen, ctx.sampleRate);
   for (let ch = 0; ch < 2; ch++) {
@@ -262,7 +263,6 @@ export function buildEffects(config) {
   state.reverbInput.connect(conv);
   conv.connect(rWet).connect(comp);
 
-  // Ping-pong delay
   const dL = ctx.createDelay(2);
   dL.delayTime.value = config.delayL || 0.45;
   const dR = ctx.createDelay(2);
@@ -291,58 +291,77 @@ export function buildEffects(config) {
   dR.connect(pR).connect(dWet);
   dWet.connect(comp);
   dWet.connect(state.reverbInput);
+
+  buildBuses();
 }
 
-// ======================== PLAYBACK ========================
+function buildBuses() {
+  const ctx = state.ctx;
+  const fxAll = (state.mode && state.mode.fx) || {};
+  state.buses = {};
+  for (const inst of Object.keys(fxAll)) {
+    const fx = fxAll[inst];
+    const dry = ctx.createGain();
+    dry.gain.value = fx.gain;
+    dry.connect(state.masterComp);
+    const del = ctx.createGain();
+    del.gain.value = fx.delay * fx.gain;
+    del.connect(state.delayInput);
+    const rev = ctx.createGain();
+    rev.gain.value = fx.reverb * fx.gain;
+    rev.connect(state.reverbInput);
+    state.buses[inst] = { dry, del, rev };
+  }
+}
 
 export function playNote(inst, fi, vol, time) {
-  const buf = state.buffers[inst];
+  const s = state;
+  const buf = s.buffers[inst];
   if (!buf || !buf[fi]) return;
-  const fx = state.mode.fx[inst];
-  if (!fx) return;
-  const src = state.ctx.createBufferSource();
+  const bus = s.buses[inst];
+  if (!bus) return;
+
+  const src = s.ctx.createBufferSource();
   src.buffer = buf[fi];
-  const v = fx.gain * vol;
-
-  const dry = state.ctx.createGain();
-  dry.gain.value = v;
-  src.connect(dry).connect(state.masterComp);
-
-  const ds = state.ctx.createGain();
-  ds.gain.value = fx.delay * v;
-  src.connect(ds).connect(state.delayInput);
-
-  const rs = state.ctx.createGain();
-  rs.gain.value = fx.reverb * v;
-  src.connect(rs).connect(state.reverbInput);
+  const g = s.ctx.createGain();
+  g.gain.value = vol;
+  src.connect(g);
+  g.connect(bus.dry);
+  g.connect(bus.del);
+  g.connect(bus.rev);
 
   src.start(time);
+  s.live.add(src);
+  src.onended = () => {
+    s.live.delete(src);
+    src.disconnect();
+    g.disconnect();
+  };
 }
 
-// ======================== SEQUENCER ========================
-
-function mod(a, n) { return ((a % n) + n) % n; }
-
-// Sequence-based trigger check for original mode (Press Cafe).
-// Returns true if the cell at column `col` should fire on step `step`.
-function seqTrigger(mode, col, step) {
-  const seqs = mode.colSeqs;
-  if (!seqs) return false;
-  const len = mode.seqLen || seqs[0].length;
-  return seqs[col][mod(step, len)] === 1;
+function silence() {
+  const s = state;
+  if (!s.ctx) return;
+  const t = s.ctx.currentTime;
+  if (s.masterGain) {
+    const gain = s.masterGain.gain;
+    gain.cancelScheduledValues(t);
+    gain.setValueAtTime(gain.value, t);
+    gain.linearRampToValueAtTime(0, t + FADE);
+  }
+  for (const src of s.live) {
+    try { src.stop(t + FADE); } catch (e) {  }
+  }
+  s.live.clear();
 }
 
-export function tick() {
+function scheduleStep(step, time) {
   const s = state;
   const mode = s.mode;
-  if (!mode) return;
+  const hasMelody = !!melGrids();
+  const totalMelCols = melTotalCols();
 
-  const hasMelody = melGrids() && melGrids().length > 0;
-  const totalMelCols = hasMelody ? melGrids().reduce((sum, g) => sum + g.cols, 0) : 0;
-  const melRows = hasMelody ? melGrids()[0].rows : 0;
-
-  // Auto-cycle
-  if (s.autoCycle && s.step > 0 && s.step % s.cycleSteps === 0) {
+  if (s.autoCycle && step > 0 && step % s.cycleSteps === 0) {
     savePat(s.currentPattern);
     let next = (s.currentPattern + 1) % s.patterns.length;
     let ch = 0;
@@ -359,13 +378,9 @@ export function tick() {
     if (ch < s.patterns.length) loadPat(next);
   }
 
-  const t = s.ctx.currentTime + 0.02;
-
-  // Balance: 0 = all melody, 100 = all rhythm, 50 = equal
   const rhythmBal = Math.min(1, s.balance / 50);
   const melBal = Math.min(1, (100 - s.balance) / 50);
 
-  // Crossfade
   let newV = 1, oldV = 0;
   if (s.trRem > 0) {
     const pr = 1 - (s.trRem / s.trSteps);
@@ -382,198 +397,253 @@ export function tick() {
           const [rs, cs] = k.split('-');
           const c = parseInt(cs);
           const a = oA[k];
-          const fires = mode.colSeqs
-            ? seqTrigger(mode, c, s.step - (g.cols - 1))
-            : mod(s.step - a.offset - (g.cols - 1), g.cols - c) === 0;
-          if (fires) {
-            const tIdx = mod(s.step - (g.cols - 1), mode.seqLen);
-            const vol = mode.stepVels ? a.vol * mode.stepVels[tIdx] : a.vol;
-            playNote(oI, parseInt(rs), vol * oldV * rhythmBal, t);
-          }
+          if (!fires(mode, g, c, a, step)) continue;
+          const vol = mode.stepVels
+            ? a.vol * mode.stepVels[mod(step - (g.cols - 1), mode.seqLen)]
+            : a.vol;
+          playNote(oI, parseInt(rs), vol * oldV * rhythmBal, time);
         }
       }
-      if (hasMelody) {
-        const melStep = Math.floor(s.step / s.melN);
-        const mc = mod(melStep, totalMelCols);
+      if (hasMelody && step % s.melN === 0) {
+        const mc = mod(Math.floor(step / s.melN), totalMelCols);
         for (const k of Object.keys(s.oldMelActive)) {
-          const [, cs] = k.split('-');
+          const [rs, cs] = k.split('-');
           if (parseInt(cs) === mc) {
-            playNote(s.oldMelInst, parseInt(k.split('-')[0]), s.oldMelActive[k].vol * oldV * melBal, t);
+            playNote(s.oldMelInst, parseInt(rs), s.oldMelActive[k].vol * oldV * melBal, time);
           }
         }
       }
     }
   }
 
-  // Main grids
-  for (let gi = 0; gi < s.grids.length; gi++) {
-    const g = s.grids[gi];
-    const lit = [];
-    const trig = [];
-    for (let r = 0; r < g.rows; r++) { lit[r] = {}; trig[r] = false; }
+  for (const g of s.grids) {
+    for (const k of Object.keys(g.active)) {
+      const [rs, cs] = k.split('-');
+      const c = parseInt(cs);
+      const a = g.active[k];
+      if (!fires(mode, g, c, a, step)) continue;
+      const vol = mode.stepVels
+        ? a.vol * mode.stepVels[mod(step - (g.cols - 1), mode.seqLen)]
+        : a.vol;
+      playNote(g.instrument, parseInt(rs), vol * newV * rhythmBal, time);
+    }
+  }
 
-    const useSeq = !!mode.colSeqs;
-    const seqIdx = useSeq ? mod(s.step, mode.seqLen) : -1;
+  if (hasMelody && step % s.melN === 0) {
+    const mc = mod(Math.floor(step / s.melN), totalMelCols);
+    for (const k of Object.keys(s.melActive)) {
+      const [rs, cs] = k.split('-');
+      if (parseInt(cs) === mc) {
+        playNote(s.melInstrument, parseInt(rs), s.melActive[k].vol * newV * melBal, time);
+      }
+    }
+    if (s.canonEnabled) {
+      for (const k of Object.keys(s.canonActive)) {
+        const [rs, cs] = k.split('-');
+        if (parseInt(cs) === mc) {
+          playNote(s.melInstrument, parseInt(rs), s.canonActive[k].vol * newV * melBal, time);
+        }
+      }
+    }
+  }
+}
+
+function fires(mode, g, c, a, step) {
+  if (mode.colSeqs) {
+    return mode.colSeqs[c][mod(step - (g.cols - 1), mode.seqLen)] === 1;
+  }
+  return mod(step - a.offset - (g.cols - 1), g.cols - c) === 0;
+}
+
+function scheduler() {
+  const s = state;
+  if (!s.playing || !s.ctx) return;
+  const ahead = document.hidden ? HIDDEN_AHEAD : AHEAD;
+  const horizon = s.ctx.currentTime + ahead;
+
+  if (s.nextStepTime < s.ctx.currentTime - 0.5) s.nextStepTime = s.ctx.currentTime;
+  while (s.nextStepTime < horizon) {
+    scheduleStep(s.step, s.nextStepTime);
+    s.paintQueue.push({ step: s.step, time: s.nextStepTime });
+    s.nextStepTime += s.stepMs / 1000;
+    s.step++;
+  }
+}
+
+export function markDirty() {
+  state.dirty = true;
+  if (state.rafId == null) state.rafId = requestAnimationFrame(frame);
+}
+
+function frame() {
+  const s = state;
+  s.rafId = null;
+  let step = s.visualStep;
+  let changed = s.dirty;
+  s.dirty = false;
+
+  if (s.playing && s.ctx) {
+    const now = s.ctx.currentTime;
+    while (s.paintQueue.length && s.paintQueue[0].time <= now) {
+      step = s.paintQueue.shift().step;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    s.visualStep = step;
+    paint(step);
+  }
+  if (s.playing) s.rafId = requestAnimationFrame(frame);
+}
+
+function writeCells(cells, want, shown, cols) {
+  for (let i = 0; i < want.length; i++) {
+    if (want[i] === shown[i]) continue;
+    shown[i] = want[i];
+    const el = cells[(i / cols) | 0][i % cols];
+    if (el) el.className = CELL_CLASS[want[i]];
+  }
+}
+
+function paint(step) {
+  const s = state;
+  const mode = s.mode;
+  if (!mode) return;
+  const playing = s.playing;
+
+  for (const g of s.grids) {
+    const rows = g.rows, cols = g.cols, n = rows * cols;
+    if (!g.want || g.want.length !== n) {
+      g.want = new Int8Array(n);
+      g.shown = new Int8Array(n).fill(-1);
+    }
+    const want = g.want;
+    want.fill(CELL.OFF);
 
     for (const k of Object.keys(g.active)) {
       const [rs, cs] = k.split('-');
-      const r = parseInt(rs), c = parseInt(cs);
-      const a = g.active[k];
-      if (useSeq) {
-        const trigIdx = mod(seqIdx - (g.cols - 1), mode.seqLen);
-        if (mode.colSeqs[c][trigIdx]) {
-          const vol = mode.stepVels ? a.vol * mode.stepVels[trigIdx] : a.vol;
-          playNote(g.instrument, r, vol * newV * rhythmBal, t);
-          trig[r] = true;
-        }
-        // Light travel: lights spawn at column 0 on trigger and travel rightward
-        for (let d = 0; d < g.cols; d++) {
-          const pastIdx = mod(seqIdx - d, mode.seqLen);
-          if (mode.colSeqs[c][pastIdx]) {
-            if (d < g.cols) lit[r][d] = true;
+      const i = parseInt(rs) * cols + parseInt(cs);
+      want[i] = g.active[k].vol >= 1 ? CELL.FULL : CELL.HALF;
+    }
+
+    if (playing) {
+
+      const rowFired = new Uint8Array(rows);
+      const lit = new Uint8Array(n);
+      for (const k of Object.keys(g.active)) {
+        const [rs, cs] = k.split('-');
+        const r = parseInt(rs), c = parseInt(cs);
+        const a = g.active[k];
+        if (mode.colSeqs) {
+          if (mode.colSeqs[c][mod(step - (cols - 1), mode.seqLen)]) rowFired[r] = 1;
+          for (let d = 0; d < cols; d++) {
+            if (mode.colSeqs[c][mod(step - d, mode.seqLen)]) lit[r * cols + d] = 1;
+          }
+        } else {
+          const period = cols - c;
+          if (mod(step - a.offset - (cols - 1), period) === 0) rowFired[r] = 1;
+          for (let j = 0; j < cols; j++) {
+            if (mod(step - a.offset - j, period) === 0) lit[r * cols + j] = 1;
           }
         }
-      } else {
-        const period = g.cols - c;
-        if (mod(s.step - a.offset - (g.cols - 1), period) === 0) {
-          playNote(g.instrument, r, a.vol * newV * rhythmBal, t);
-          trig[r] = true;
-        }
-        for (let j = 0; j < g.cols; j++) {
-          if (mod(s.step - a.offset - j, period) === 0) lit[r][j] = true;
+      }
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const i = r * cols + c;
+          if (!lit[i]) continue;
+          if (rowFired[r] && c === cols - 1) want[i] = CELL.TRIG;
+          else if (want[i] === CELL.OFF) want[i] = CELL.LIT;
         }
       }
     }
 
-    for (let r = 0; r < g.rows; r++) {
-      for (let c = 0; c < g.cols; c++) {
-        const a = g.active[r + '-' + c];
-        const isL = !!lit[r][c];
-        const isT = trig[r] && isL && c === g.cols - 1;
-        if (isT) applyStyle(g.cells[r][c], STYLES.TRIG);
-        else if (a && a.vol >= 1) applyStyle(g.cells[r][c], STYLES.FULL);
-        else if (a) applyStyle(g.cells[r][c], STYLES.HALF);
-        else if (isL) applyStyle(g.cells[r][c], STYLES.LIT);
-        else applyStyle(g.cells[r][c], STYLES.OFF);
-      }
+    writeCells(g.cells, want, g.shown, cols);
+  }
+
+  const mg = melGrids();
+  if (!mg || s.melCells.length === 0) return;
+  const cols = melTotalCols();
+  const rows = mg[0].rows;
+  const cursor = playing ? mod(Math.floor(step / s.melN), cols) : -1;
+
+  paintVoice(s.melCells, s.melActive, rows, cols, cursor, 'mel');
+  if (s.canonEnabled && s.canonCells.length > 0) {
+    paintVoice(s.canonCells, s.canonActive, rows, cols, cursor, 'canon');
+  }
+}
+
+const voiceBufs = {};
+
+function paintVoice(cells, active, rows, cols, cursor, key) {
+  const n = rows * cols;
+  let buf = voiceBufs[key];
+  if (!buf || buf.want.length !== n) {
+    buf = voiceBufs[key] = { want: new Int8Array(n), shown: new Int8Array(n).fill(-1) };
+  }
+  const { want, shown } = buf;
+  want.fill(CELL.OFF);
+
+  for (const k of Object.keys(active)) {
+    const [rs, cs] = k.split('-');
+    const r = parseInt(rs), c = parseInt(cs);
+    if (r >= rows || c >= cols) continue;
+    want[r * cols + c] = active[k].vol >= 1 ? CELL.FULL : CELL.HALF;
+  }
+  if (cursor >= 0) {
+    for (let r = 0; r < rows; r++) {
+      const i = r * cols + cursor;
+      want[i] = want[i] === CELL.OFF ? CELL.LIT : CELL.TRIG;
     }
   }
 
-  // Melody grids
-  if (hasMelody) {
-    const melStep = Math.floor(s.step / s.melN);
-    const mc = mod(melStep, totalMelCols);
-    for (let r = 0; r < melRows; r++) {
-      for (let c = 0; c < totalMelCols; c++) {
-        if (!s.melCells[r] || !s.melCells[r][c]) continue;
-        const a = s.melActive[r + '-' + c];
-        const isCursor = (c === mc);
-        if (a && isCursor) {
-          applyStyle(s.melCells[r][c], STYLES.TRIG);
-          if (s.step % s.melN === 0) playNote(s.melInstrument, r, a.vol * newV * melBal, t);
-        } else if (a && a.vol >= 1) applyStyle(s.melCells[r][c], STYLES.FULL);
-        else if (a) applyStyle(s.melCells[r][c], STYLES.HALF);
-        else if (isCursor) applyStyle(s.melCells[r][c], STYLES.LIT);
-        else applyStyle(s.melCells[r][c], STYLES.OFF);
-      }
-    }
+  writeCells(cells, want, shown, cols);
+}
 
-    // Canon grid
-    if (s.canonEnabled) {
-      for (let r = 0; r < melRows; r++) {
-        for (let c = 0; c < totalMelCols; c++) {
-          if (!s.canonCells[r] || !s.canonCells[r][c]) continue;
-          const a = s.canonActive[r + '-' + c];
-          const isCursor = (c === mc);
-          if (a && isCursor) {
-            applyStyle(s.canonCells[r][c], STYLES.TRIG);
-            if (s.step % s.melN === 0) playNote(s.melInstrument, r, a.vol * newV * melBal, t);
-          } else if (a && a.vol >= 1) applyStyle(s.canonCells[r][c], STYLES.FULL);
-          else if (a) applyStyle(s.canonCells[r][c], STYLES.HALF);
-          else if (isCursor) applyStyle(s.canonCells[r][c], STYLES.LIT);
-          else applyStyle(s.canonCells[r][c], STYLES.OFF);
-        }
-      }
-    }
-  }
-
-  s.step++;
+export function resetPainter() {
+  for (const k of Object.keys(voiceBufs)) delete voiceBufs[k];
+  markDirty();
 }
 
 export function start() {
-  if (!state.ctx) return;
-  // Blocked outside a user gesture — ui.js retries on the first one.
-  if (state.ctx.state !== 'running') state.ctx.resume().catch(() => {});
-  state.playing = true;
-  tick();
-  state.timer = setInterval(tick, state.stepMs);
+  const s = state;
+  if (!s.ctx || !s.mode || s.playing) return;
+
+  if (s.ctx.state !== 'running') s.ctx.resume().catch(() => {});
+
+  buildEffects(s.mode.effects);
+  s.playing = true;
+  s.paintQueue.length = 0;
+  s.nextStepTime = s.ctx.currentTime + 0.05;
+  s.schedTimer = setInterval(scheduler, TICK_MS);
+  scheduler();
+  markDirty();
 }
 
 export function stop() {
   const s = state;
+  if (s.schedTimer) clearInterval(s.schedTimer);
+  s.schedTimer = null;
   s.playing = false;
-  if (s.timer) clearInterval(s.timer);
-  s.timer = null;
+  silence();
   s.step = 0;
-
-  for (const g of s.grids) {
-    for (let r = 0; r < g.rows; r++) {
-      for (let c = 0; c < g.cols; c++) {
-        const a = g.active[r + '-' + c];
-        applyStyle(g.cells[r][c], a ? (a.vol >= 1 ? STYLES.FULL : STYLES.HALF) : STYLES.OFF);
-      }
-    }
-  }
-
-  const mode = s.mode;
-  if (mode && melGrids()) {
-    const totalMelCols = melGrids().reduce((sum, g) => sum + g.cols, 0);
-    const melRows = melGrids()[0].rows;
-    for (let r = 0; r < melRows; r++) {
-      for (let c = 0; c < totalMelCols; c++) {
-        if (s.melCells[r] && s.melCells[r][c]) {
-          const a = s.melActive[r + '-' + c];
-          applyStyle(s.melCells[r][c], a ? (a.vol >= 1 ? STYLES.FULL : STYLES.HALF) : STYLES.OFF);
-        }
-      }
-    }
-  }
+  s.visualStep = 0;
+  s.paintQueue.length = 0;
+  markDirty();
 }
-
-export function restartTimer() {
-  if (state.timer) clearInterval(state.timer);
-  if (state.playing) state.timer = setInterval(tick, state.stepMs);
-}
-
-// ======================== RESET / RANDOMIZE ========================
 
 export function resetAll() {
   if (state.playing) stop();
   state.step = 0;
-  for (const g of state.grids) {
-    g.active = {};
-    for (let r = 0; r < g.rows; r++)
-      for (let c = 0; c < g.cols; c++)
-        applyStyle(g.cells[r][c], STYLES.OFF);
-  }
+  for (const g of state.grids) g.active = {};
   state.melActive = {};
-  const mode = state.mode;
-  if (mode && melGrids()) {
-    const totalMelCols = melGrids().reduce((s, g) => s + g.cols, 0);
-    const melRows = melGrids()[0].rows;
-    for (let r = 0; r < melRows; r++)
-      for (let c = 0; c < totalMelCols; c++)
-        if (state.melCells[r] && state.melCells[r][c])
-          applyStyle(state.melCells[r][c], STYLES.OFF);
-  }
-  initPatterns(mode);
+  initPatterns(state.mode);
   state.currentPattern = 0;
   for (let i = 0; i < state.patButtons.length; i++)
     state.patButtons[i].className = i === 0 ? 'pat-btn sel' : 'pat-btn';
   computeCanon();
+  markDirty();
 }
-
-// ======================== SAVE / LOAD ========================
 
 export function saveSong() {
   savePat(state.currentPattern);
@@ -581,7 +651,7 @@ export function saveSong() {
     mode: state.mode.id,
     patterns: state.patterns,
     currentPattern: state.currentPattern,
-    bpm: Math.round(60000 / state.stepMs),
+    stepMs: state.stepMs,
     cycleSteps: state.cycleSteps,
     autoCycle: state.autoCycle,
     melN: state.melN,
@@ -594,7 +664,7 @@ export function saveSong() {
   URL.revokeObjectURL(a.href);
 }
 
-export function loadSong(onLoaded) {
+export function loadSong(onLoaded, onError) {
   const inp = document.createElement('input');
   inp.type = 'file';
   inp.accept = '.json';
@@ -604,9 +674,9 @@ export function loadSong(onLoaded) {
     reader.onload = () => {
       try {
         const s = JSON.parse(reader.result);
-        if (!s.patterns) return;
+        if (!s.patterns) throw new Error('not a polynome file');
         if (s.mode && s.mode !== state.mode.id) {
-          console.warn(`Song is for mode "${s.mode}", current mode is "${state.mode.id}"`);
+          if (onError) onError(`that file is for ${s.mode} mode`);
           return;
         }
         if (state.playing) stop();
@@ -619,14 +689,14 @@ export function loadSong(onLoaded) {
         state.currentPattern = s.currentPattern || 0;
         loadPat(state.currentPattern);
         if (onLoaded) onLoaded(s);
-      } catch (e) { console.error(e); }
+      } catch (e) {
+        if (onError) onError(`could not read that file: ${e.message}`);
+      }
     };
     reader.readAsText(inp.files[0]);
   });
   inp.click();
 }
-
-// ======================== RANDOM HELPERS ========================
 
 export function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
 export function shuffle(a) {
@@ -640,27 +710,25 @@ export function shuffle(a) {
 export function randInt(lo, hi) { return lo + Math.floor(Math.random() * (hi - lo + 1)); }
 
 export function randomize() {
-  if (state.playing) stop();
+  const wasPlaying = state.playing;
+  if (wasPlaying) stop();
   state.step = 0;
   const mode = state.mode;
 
-  // maxCol: exclude rightmost column (period=1, fires every step)
   const maxCol = (cols) => cols - 2;
 
-  // Coprime period pools — pairs that create long composite cycles
   const coprimeSets = [
     [3, 4], [3, 5], [3, 7], [4, 5], [4, 7], [5, 7], [5, 8],
     [3, 4, 7], [3, 5, 8], [4, 7, 11], [5, 7, 13], [3, 8, 11],
   ];
 
-  // ---- Rhythm generation ----
   for (let gi = 0; gi < state.grids.length; gi++) {
     const g = state.grids[gi];
     const rows = g.rows, cols = g.cols;
     const cells = {};
 
     if (mode.colSeqs) {
-      // Sequence-based (original mode): pick 3-5 cells from interesting columns
+
       const allRows = shuffle([...Array(rows).keys()]);
       const interestingCols = [];
       for (let c = 0; c < cols; c++) {
@@ -674,31 +742,29 @@ export function randomize() {
     } else {
       const mc = maxCol(cols);
 
-      // Pick coprime periods for this grid
       const periods = pick(coprimeSets).filter(p => p <= mc);
       if (periods.length === 0) continue;
 
       const allRows = shuffle([...Array(rows).keys()]);
       let ri = 0;
 
-      // --- Anchor rows: one per period, with pattern variety ---
-      const anchorInfo = []; // store for response rows
+      const anchorInfo = [];
       for (const period of periods) {
         if (ri >= rows) break;
         const row = allRows[ri++];
-        const col = mc - period; // column that gives this period
+        const col = mc - period;
         const patType = pick(['pulse', 'skip', 'cluster']);
 
         if (patType === 'pulse') {
-          // Single cell — clean periodic pulse
+
           cells[row + '-' + col] = 1;
         } else if (patType === 'skip') {
-          // Two cells with different periods — polyrhythmic
+
           cells[row + '-' + col] = 1;
           const col2 = Math.max(0, Math.min(mc, col - randInt(1, 3)));
           if (col2 !== col) cells[row + '-' + col2] = 0.5;
         } else {
-          // Cluster: 2-3 adjacent cells creating burst patterns
+
           cells[row + '-' + col] = 1;
           if (col > 0) cells[row + '-' + (col - 1)] = 0.5;
           if (col > 1 && Math.random() > 0.5) cells[row + '-' + (col - 2)] = 0.5;
@@ -706,12 +772,11 @@ export function randomize() {
         anchorInfo.push({ row, period, col });
       }
 
-      // --- Response rows: play on OFF-beats of an anchor ---
       const nResponse = randInt(1, 2);
       for (let rr = 0; rr < nResponse && ri < rows; rr++) {
         const row = allRows[ri++];
         const anchor = pick(anchorInfo);
-        // Offset by half the anchor's period
+
         const offset = Math.floor(anchor.period / 2);
         const responseCol = Math.max(0, Math.min(mc, anchor.col + offset));
         if (responseCol !== anchor.col) {
@@ -719,10 +784,9 @@ export function randomize() {
         }
       }
 
-      // --- Accent row: single strong hit at phrase boundary ---
       if (ri < rows && Math.random() > 0.3) {
         const row = allRows[ri++];
-        // Phrase-start accent at column 0 (longest period) or mid-point
+
         const accentCol = pick([0, Math.floor(mc / 2)]);
         cells[row + '-' + accentCol] = 1;
       }
@@ -731,13 +795,11 @@ export function randomize() {
     state.patterns[0].grids[gi] = { cells, instrument: pick(mode.mainInstruments).id };
   }
 
-  // ---- Melody generation: motif-based ----
   if (melGrids()) {
-    const totalCols = melGrids().reduce((s, g) => s + g.cols, 0);
+    const totalCols = melTotalCols();
     const melRows = melGrids()[0].rows;
     const mc = {};
 
-    // Generate a 3-5 note motif (interval sequence)
     const motifLen = randInt(3, 5);
     const motif = [];
     const intervalPool = [-3, -2, -1, 1, 2, 3];
@@ -745,12 +807,10 @@ export function randomize() {
       motif.push(pick(intervalPool));
     }
 
-    // Place motif + variations across the grid
     const clamp = (v) => Math.max(0, Math.min(melRows - 1, v));
     let startPitch = randInt(1, Math.max(1, melRows - 3));
-    const spacing = randInt(2, 4); // columns between notes
+    const spacing = randInt(2, 4);
 
-    // Motif at phrase start
     let col = 0;
     let pitch = startPitch;
     mc[pitch + '-' + col] = 1;
@@ -760,10 +820,8 @@ export function randomize() {
       mc[pitch + '-' + col] = (i === 0) ? 1 : 0.5;
     }
 
-    // Gap (breathing space)
     col += spacing * randInt(2, 4);
 
-    // Repeat motif transposed (up or down 1-2 rows)
     if (col < totalCols - motifLen * spacing) {
       const transpose = pick([-2, -1, 1, 2]);
       pitch = clamp(startPitch + transpose);
@@ -776,7 +834,6 @@ export function randomize() {
       col += spacing * randInt(2, 3);
     }
 
-    // Variation: retrograde or truncated motif
     if (col < totalCols - 3 * spacing) {
       const varType = pick(['retrograde', 'truncated', 'augmented']);
       let varMotif;
@@ -785,7 +842,7 @@ export function randomize() {
       } else if (varType === 'truncated') {
         varMotif = motif.slice(0, Math.max(2, motif.length - 1));
       } else {
-        // Augmented: double the intervals
+
         varMotif = motif.map(x => x * 2);
       }
       const varTranspose = pick([-1, 0, 1]);
@@ -804,10 +861,9 @@ export function randomize() {
     state.patterns[0].melody = { cells: mc, instrument: melInst };
   }
 
-  // ---- Pattern evolution: narrative arc (sparse → dense) ----
   const nPat = state.patterns.length;
   for (let pi = 1; pi < nPat; pi++) {
-    const progress = pi / (nPat - 1); // 0→1
+    const progress = pi / (nPat - 1);
 
     for (let gi = 0; gi < state.grids.length; gi++) {
       const base = state.patterns[0].grids[gi];
@@ -815,26 +871,24 @@ export function randomize() {
       const mc = maxCol(g.cols);
       const cells = { ...base.cells };
 
-      // Early patterns: add specific rows (intentional additions)
-      // Late patterns: densify existing rows + add ghost notes
       const nAdd = Math.floor(1 + progress * 4);
 
       for (let a = 0; a < nAdd; a++) {
         if (progress < 0.5) {
-          // Early: add a new cell in a new row (expand coverage)
+
           const r = randInt(0, g.rows - 1);
           const period = pick([3, 4, 5, 7, 8, 11]);
           const c = Math.max(0, Math.min(mc, mc - period));
           cells[r + '-' + c] = Math.random() > 0.3 ? 1 : 0.5;
         } else {
-          // Late: add cells near existing ones (densify)
+
           const keys = Object.keys(cells);
           if (keys.length > 0) {
             const k = pick(keys);
             const [rs, cs] = k.split('-');
             const r = parseInt(rs);
             const c = parseInt(cs);
-            // Adjacent cell (±1 row or col)
+
             const nr = Math.max(0, Math.min(g.rows - 1, r + pick([-1, 0, 1])));
             const nc = Math.max(0, Math.min(mc, c + pick([-2, -1, 1, 2])));
             cells[nr + '-' + nc] = 0.5;
@@ -842,7 +896,6 @@ export function randomize() {
         }
       }
 
-      // Occasional removal for variety (more likely in middle patterns)
       if (progress > 0.2 && progress < 0.7 && Math.random() > 0.5) {
         const keys = Object.keys(cells);
         if (keys.length > 2) delete cells[pick(keys)];
@@ -851,11 +904,10 @@ export function randomize() {
       state.patterns[pi].grids[gi] = { cells, instrument: base.instrument };
     }
 
-    // Melody evolution: shift notes, add ornaments
     if (melGrids()) {
       const baseMel = state.patterns[Math.max(0, pi - 1)].melody;
       const melCells = { ...baseMel.cells };
-      const totalCols = melGrids().reduce((s, g) => s + g.cols, 0);
+      const totalCols = melTotalCols();
       const melRows = melGrids()[0].rows;
 
       const nMut = Math.floor(1 + progress * 3);
@@ -865,7 +917,7 @@ export function randomize() {
 
         const action = Math.random();
         if (action < 0.4) {
-          // Shift a note by 1-2 rows (pitch variation)
+
           const k = pick(keys);
           const [rs, cs] = k.split('-');
           const nr = Math.max(0, Math.min(melRows - 1, parseInt(rs) + pick([-2, -1, 1, 2])));
@@ -876,7 +928,7 @@ export function randomize() {
             melCells[nk] = vol;
           }
         } else if (action < 0.7) {
-          // Add passing note between two existing notes
+
           const sorted = keys.map(k => {
             const [r, c] = k.split('-');
             return { r: parseInt(r), c: parseInt(c) };
@@ -891,7 +943,7 @@ export function randomize() {
             }
           }
         } else {
-          // Remove a note (creates space)
+
           if (keys.length > 3) delete melCells[pick(keys)];
         }
       }
