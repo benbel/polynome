@@ -2,7 +2,7 @@ import os
 import numpy as np
 from common import (
     SR, sine, noise, env_exp_decay, env_adsr,
-    lowpass, highpass, bandpass, comb_filter,
+    lowpass, highpass, bandpass, comb_filter, high_shelf, low_shelf,
     asymmetric_saturate, normalize, fade_in, fade_out,
     to_stereo, mix_stereo, export_ogg, write_sprite, write_manifest, generate_reverb_ir,
 )
@@ -77,10 +77,10 @@ CONFIG = {
         'delayFeedback': 0.25,
         'delayDarkLP': 3000,
         'delayWet': 0.15,
-        'compThreshold': -18,
+        'compThreshold': -14,
         'compRatio': 4,
     },
-    'fx': {'tone': {'delay': 0.15, 'reverb': 0.25, 'gain': 1.0}},
+    'fx': {'tone': {'delay': 0.15, 'reverb': 0.25, 'gain': 0.44}},
     'defaultStepMs': 74,
     'numPatterns': len(PATTERN_CELLS),
     'cellSize': 28,
@@ -95,68 +95,84 @@ CONFIG = {
     ],
 }
 
+TONE_DUR = 0.7
+PAN_SPREAD = 0.3
+
 ENVELOPE = {
-    'attack_ms': 0.11,
-    'decay_time': 0.259,
+    'attack_ms': 1.2,
+    'decay_time': 0.30,
+    'partial_damping': 0.42,
     'harmonic_ratios': [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 10.0, 12.0],
     'harmonic_amplitudes_db': [0, -3.3, -0.1, -11.5, -17.9, -11.0, -29.8, -16.8, -30.0, -40.8],
     'inharmonicity_cents': [0, 6, -2, 10, -4, 5, -7, 8, -3, 6],
+    'partial_phases': [0.00, 2.41, 4.83, 1.17, 3.62, 5.94, 0.78, 2.05, 4.26, 3.11],
+    'presence_db': 6.0,
+    'warmth_db': 2.5,
 }
 
 
-def gen_tone(freq, env_profile, sr=SR):
-    dur = 0.9
+def pan_positions(freqs, spread=PAN_SPREAD):
+    order = sorted(range(len(freqs)), key=lambda i: freqs[i])
+    pans = [0.0] * len(freqs)
+    for rank, i in enumerate(order):
+        pans[i] = -spread + 2 * spread * rank / max(1, len(freqs) - 1)
+    return pans
+
+
+def gen_tone(freq, env_profile, pan=0.0, sr=SR):
+    dur = TONE_DUR
     n = int(sr * dur)
     t = np.arange(n) / sr
 
-    atk_dur = 0.008
-    atk_n = int(sr * atk_dur)
-    atk = noise(atk_dur, sr)
-    atk = bandpass(atk, max(20, freq * 0.5), min(sr / 2 - 100, freq * 4), sr)
-    atk_env = env_exp_decay(atk_dur, 0.2, 0.003, sr)
-    atk *= atk_env * 0.125
-
-    sig = np.zeros(n)
     ratios = env_profile['harmonic_ratios']
     amps_db = env_profile['harmonic_amplitudes_db']
     detune = env_profile.get('inharmonicity_cents', [0] * len(ratios))
+    phases = env_profile.get('partial_phases', [0.0] * len(ratios))
+    decay_time = env_profile['decay_time']
+    damping = env_profile['partial_damping']
 
+    sig = np.zeros(n)
     for h in range(len(ratios)):
         partial_freq = freq * ratios[h] * (2 ** (detune[h] / 1200))
-        if partial_freq >= sr / 2:
+        if partial_freq >= min(sr / 2, 16000):
             break
         amp = 10 ** (amps_db[h] / 20)
-        sig += amp * np.sin(2 * np.pi * partial_freq * t)
+        partial_decay = decay_time * ratios[h] ** -damping
+        sig += amp * np.sin(2 * np.pi * partial_freq * t + phases[h]) * np.exp(-t / partial_decay)
+
+    sig = normalize(sig, 0.80)
+
+    atk_dur = 0.007
+    atk = noise(atk_dur, sr)
+    atk = bandpass(atk, max(20, freq * 1.2), min(sr / 2 - 100, freq * 6), sr)
+    atk = normalize(atk, 1.0) * env_exp_decay(atk_dur, 0.3, 0.0025, sr)
 
     body_exc = np.zeros(n)
-    body_exc[:atk_n] = atk[:min(atk_n, len(atk))]
+    body_exc[:len(atk)] = atk
     delay = max(1, int(sr / freq))
-    body = comb_filter(body_exc, delay, feedback=0.085, lp_freq=min(freq * 3, sr / 2 - 100), sr=sr)
-    body *= 0.138
+    body = comb_filter(body_exc, delay, feedback=0.55, lp_freq=min(freq * 2.5, sr / 2 - 100), sr=sr)
+    body *= env_exp_decay(dur, 0.5, decay_time * 0.5, sr)
 
-    sig = sig + body[:n]
+    sig = sig + normalize(body[:n], 0.22)
+    sig[:len(atk)] += atk * 0.28
 
-    env = env_exp_decay(dur, env_profile['attack_ms'], env_profile['decay_time'], sr)
-    sig *= env
+    sig = asymmetric_saturate(sig, drive=1.1, asymmetry=0.05)
+    sig = highpass(sig, 30, sr)
+    sig = high_shelf(sig, 3000, env_profile['presence_db'], sr)
+    sig = low_shelf(sig, 200, env_profile['warmth_db'], sr)
 
-    sig[:len(atk)] += atk[:min(len(atk), n)]
-
-    sig = asymmetric_saturate(sig, drive=1.37, asymmetry=0.080)
-
-    sig_hp = highpass(sig, 1500, sr) * 2.78
-    sig = sig + sig_hp
-
-    sig = normalize(sig, 0.85)
+    sig = normalize(sig, 0.80)
     fade_in(sig, env_profile['attack_ms'], sr)
-    fade_out(sig, 40, sr)
+    fade_out(sig, 70, sr)
 
-    return to_stereo(sig, 0)
+    return to_stereo(sig, pan) * np.sqrt(2)
 
 
 def generate(out_dir, sr=SR, fmt='ogg'):
     freqs = FREQS
     print(f'  tone: {len(freqs)} pitches')
-    segments = [normalize(gen_tone(freq, ENVELOPE, sr), 0.85) for freq in freqs]
+    segments = [gen_tone(freq, ENVELOPE, pan, sr)
+                for freq, pan in zip(freqs, pan_positions(freqs))]
 
     entry = {'id': 'tone', 'label': 'tone', 'pitchCount': len(freqs), 'type': 'main'}
     entry.update(write_sprite(out_dir, 'tone', segments, sr, fmt))
