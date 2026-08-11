@@ -1,9 +1,3 @@
-"""Generate texture mode audio assets.
-
-Port of the OfflineAudioContext renderers to numpy/scipy.
-Each instrument function takes (freq, sr) and returns a stereo numpy array.
-"""
-
 import os
 import numpy as np
 from common import (
@@ -11,7 +5,7 @@ from common import (
     env_exp_decay, env_adsr, lowpass, highpass, bandpass, filter_sweep,
     wavefold, tanh_saturate, asymmetric_saturate, bitcrush, comb_filter,
     normalize, fade_in, fade_out, to_stereo, mix_stereo,
-    export_ogg, write_manifest, generate_reverb_ir,
+    export_ogg, write_sprite, write_manifest, generate_reverb_ir,
 )
 
 FREQS = [523, 440, 370, 311, 262, 220, 175, 147, 123, 104, 82, 65, 55, 44, 33, 25]
@@ -34,14 +28,11 @@ FADE = {
 }
 
 
-# ======================== INSTRUMENTS ========================
-
 def gen_sub(freq, sr=SR):
     f = freq * 0.25
     dur = DURATIONS['sub']
     n = int(sr * dur)
 
-    # 4 saws + 4 pulses with per-voice drift
     voices = []
     detunes = [-28, -18, -8, -3, 3, 8, 18, 28]
     pans = [-0.9, -0.6, -0.3, -0.1, 0.1, 0.3, 0.6, 0.9]
@@ -53,30 +44,26 @@ def gen_sub(freq, sr=SR):
         inst_freq = f * (2 ** ((detunes[i] + drift) / 1200))
         phase = np.cumsum(inst_freq / sr)
         if i < 4:
-            voice = 2 * (phase % 1) - 1  # saw
+            voice = 2 * (phase % 1) - 1
         else:
-            voice = np.where(phase % 1 < 0.5, 1.0, -1.0)  # pulse
+            voice = np.where(phase % 1 < 0.5, 1.0, -1.0)
         gain = 0.14 if i < 4 else 0.10
         voices.append(to_stereo(voice * gain, pans[i]))
 
     mix = mix_stereo(*voices) * 0.4
 
-    # Asymmetric wavefold
     for ch in range(2):
         x = mix[:, ch] * 3
         folded = (4 / np.pi) * np.arcsin(np.sin(np.pi * x / 2))
         mix[:, ch] = np.where(x > 0, folded * 0.85, folded)
 
-    # Tanh saturation + filter sweep
     mix = np.tanh(mix * 6) / np.tanh(6)
     for ch in range(2):
         mix[:, ch] = filter_sweep(mix[:, ch], f * 16, f * 1.3, sr, order=4)
 
-    # Sub sine + 50Hz hum
     sub_sig = to_stereo(sine(f, dur, sr) * 0.5, 0)
     hum = to_stereo(sine(50, dur, sr) * 0.06, 0)
 
-    # Noise layer
     noise_sig = noise(0.5, sr)
     noise_sig = wavefold(noise_sig, 2)
     noise_sig = lowpass(noise_sig, f * 8, sr)
@@ -91,19 +78,16 @@ def gen_sub(freq, sr=SR):
 
 
 def gen_fm(freq, sr=SR):
-    """Shorter percussive FM — metallic, punchy."""
     f = freq
     dur = DURATIONS['fm']
     n = int(sr * dur)
     t = np.arange(n) / sr
 
-    # Two carriers with drift
     drift1 = np.sin(2 * np.pi * 0.11 * t) * 1.5
     drift2 = np.sin(2 * np.pi * 0.08 * t) * 2.0
     car1_freq = f * (2 ** (drift1 / 1200))
     car2_freq = f * 1.005 * (2 ** (drift2 / 1200))
 
-    # Modulators
     m1_idx = np.linspace(4, 0.2, n) * f
     m2_idx = np.linspace(2.5, 0.15, n) * f
     m3_idx = np.linspace(1.2, 0.5, n) * f
@@ -115,14 +99,12 @@ def gen_fm(freq, sr=SR):
     car1 = np.sin(2 * np.pi * np.cumsum(car1_freq + m1 + m2 + m3) / sr) * 0.55
     car2 = np.sin(2 * np.pi * np.cumsum(car2_freq + m1 + m3) / sr) * 0.4
 
-    # Asymmetric fold
     mix = to_stereo(car1, -0.35)[:n] + to_stereo(car2, 0.35)[:n]
     for ch in range(2):
         x = mix[:, ch] * 1.8
         folded = (4 / np.pi) * np.arcsin(np.sin(np.pi * x / 2))
         mix[:, ch] = np.where(x > 0, folded * 0.8, folded * 1.1)
 
-    # LP sweep + hum
     for ch in range(2):
         mix[:, ch] = filter_sweep(mix[:, ch], f * 6, f * 1.2, sr)
     hum = to_stereo(sine(50, dur, sr) * 0.03, 0)
@@ -138,7 +120,6 @@ def gen_glass(freq, sr=SR):
     dur = DURATIONS['glass']
     n = int(sr * dur)
 
-    # Noise-excited bandpass resonators
     exc = noise(0.02, sr)
     result = np.zeros((n, 2))
 
@@ -155,7 +136,6 @@ def gen_glass(freq, sr=SR):
         padded *= env * amps[i]
         result += to_stereo(padded, pan_vals[i])[:n]
 
-    # Comb resonators
     exc_long = np.zeros(n)
     exc_long[:len(exc)] = exc * 0.8
     delay1 = max(1, int(sr / f))
@@ -163,7 +143,6 @@ def gen_glass(freq, sr=SR):
     c1_env = env_exp_decay(dur, 1, 0.7, sr)
     result += to_stereo(c1 * c1_env * 0.35, 0)[:n]
 
-    # Body sine
     body = sine(f, dur, sr) * wavefold(sine(f, dur, sr), 1.5) * 0.25
     body_env = env_exp_decay(dur, 1, 0.6, sr)
     result += to_stereo(body * body_env, 0)[:n]
@@ -174,22 +153,19 @@ def gen_glass(freq, sr=SR):
 
 
 def gen_tape(freq, sr=SR):
-    """Tape degradation — heavy wow/flutter, dropout artifacts, saturated warmth."""
     f = freq
     dur = DURATIONS['tape']
     n = int(sr * dur)
     t = np.arange(n) / sr
 
-    # 6 sines with exaggerated wow/flutter (more degradation than pad)
     voices = []
     detunes = [-15, -8, -3, 3, 8, 15]
     pans = [-0.7, -0.35, -0.1, 0.1, 0.35, 0.7]
     wow_rates = [0.4, 0.35, 0.55, 0.45, 0.6, 0.38]
-    wow_depths = [8, 12, 6, 14, 9, 11]  # Much deeper wow
+    wow_depths = [8, 12, 6, 14, 9, 11]
 
     for i in range(6):
         wow = np.sin(2 * np.pi * wow_rates[i] * t) * wow_depths[i]
-        # Add flutter (higher freq pitch wobble)
         flutter = np.sin(2 * np.pi * (4.5 + i * 0.3) * t) * 2.5
         inst_freq = f * (2 ** ((detunes[i] + wow + flutter) / 1200))
         voice = np.sin(2 * np.pi * np.cumsum(inst_freq / sr))
@@ -197,22 +173,18 @@ def gen_tape(freq, sr=SR):
 
     mix = mix_stereo(*voices)[:n]
 
-    # Heavy asymmetric saturation (tape compression character)
     for ch in range(2):
         x = mix[:, ch]
         mix[:, ch] = np.where(x > 0, np.tanh(x * 3.0) / 3.0 * 2.5, np.tanh(x * 2.0) / 2.0)
 
-    # Low-pass with frequency-relative cutoff
     for ch in range(2):
         mix[:, ch] = lowpass(mix[:, ch], min(f * 3.5, sr / 2 - 100), sr)
 
-    # Tape hiss — more prominent
     hiss = stereo_noise(dur, sr) * 0.10
     for ch in range(2):
         hiss[:, ch] = lowpass(hiss[:, ch], min(f * 4, sr / 2 - 100), sr)
         hiss[:, ch] = highpass(hiss[:, ch], max(20, f * 0.5), sr)
 
-    # Dropout artifacts — brief amplitude dips
     dropout_env = np.ones(n)
     for _ in range(3):
         pos = np.random.randint(int(n * 0.1), int(n * 0.8))
@@ -234,7 +206,6 @@ def gen_dust(freq, sr=SR):
 
     result = np.zeros((n, 2))
 
-    # Karplus-Strong string
     delay = max(1, int(sr / f))
     exc = noise(0.01, sr)
     exc_pad = np.zeros(n)
@@ -243,7 +214,6 @@ def gen_dust(freq, sr=SR):
     ks_env = env_exp_decay(dur, 1, 0.3, sr)
     result += to_stereo(ks * ks_env * 0.35, 0)[:n]
 
-    # Inharmonic comb resonators
     ratios = [1, 1.34, 1.87]
     comb_pans = [0, -0.5, 0.5]
     for i, ratio in enumerate(ratios):
@@ -255,7 +225,6 @@ def gen_dust(freq, sr=SR):
         c_env = env_exp_decay(dur, 1, 0.15 + i * 0.05, sr)
         result += to_stereo(c * c_env * 0.2, comb_pans[i])[:n]
 
-    # Grain clusters
     for count, offset_base in [(12, 0), (6, 0.035), (3, 0.07)]:
         for _ in range(count):
             g_dur = 0.002 + np.random.random() * 0.01
@@ -270,7 +239,6 @@ def gen_dust(freq, sr=SR):
             if start < n:
                 result[start:end] += gs[:end - start]
 
-    # Folded noise tail
     tail = noise(0.6, sr)
     tail = lowpass(tail, f * 2.5, sr)
     tail = wavefold(tail, 1.5)
@@ -288,7 +256,6 @@ def gen_pad(freq, sr=SR):
     n = int(sr * dur)
     t = np.arange(n) / sr
 
-    # 8 detuned saws
     detunes = [-25, -18, -10, -4, 4, 10, 18, 25]
     pans = [-0.9, -0.65, -0.35, -0.1, 0.1, 0.35, 0.65, 0.9]
     voices = []
@@ -300,18 +267,15 @@ def gen_pad(freq, sr=SR):
 
     mix = mix_stereo(*voices)[:n]
 
-    # Wavefold + LP with LFO
     for ch in range(2):
         mix[:, ch] = wavefold(mix[:, ch], 1.5)
     lfo = f * 3 + np.sin(2 * np.pi * 0.2 * t) * f * 2
     for ch in range(2):
         mix[:, ch] = filter_sweep(mix[:, ch], f, f * 5, sr)
 
-    # Sub sine
     sub = to_stereo(sine(f, dur, sr) * 0.18, 0)
     result = mix_stereo(mix, sub[:n])
 
-    # Slow attack/release envelope
     env = env_adsr(dur, 0.8, 0.2, 0.8, 1.2, sr)
     result *= env[:, np.newaxis]
     return result
@@ -323,7 +287,6 @@ def gen_organ(freq, sr=SR):
     n = int(sr * dur)
     t = np.arange(n) / sr
 
-    # Drawbar harmonics
     drawbars = [1, 2, 3, 4, 6, 8]
     amps = [0.8, 0.6, 0.3, 0.2, 0.15, 0.1]
     mix = np.zeros(n)
@@ -332,14 +295,11 @@ def gen_organ(freq, sr=SR):
         if harm_freq < sr / 2:
             mix += sine(harm_freq, dur, sr) * amps[i] * 0.15
 
-    # Rotary tremolo
     trem = 1 + np.sin(2 * np.pi * 5.8 * t) * 0.2
     mix *= trem
 
-    # Asymmetric saturation
     mix = np.where(mix > 0, np.tanh(mix * 1.8) / 1.8 * 1.5, np.tanh(mix * 1.3) / 1.3)
 
-    # Key click
     click = noise(0.005, sr)
     click = highpass(click, 2000, sr) * 0.08
     result_mono = np.zeros(n)
@@ -357,7 +317,6 @@ def gen_piano(freq, sr=SR):
     dur = DURATIONS['piano']
     n = int(sr * dur)
 
-    # Noise exciter -> comb resonators (Karplus-Strong)
     exc = noise(0.008, sr)
     exc = bandpass(exc, max(20, f), min(sr/2 - 100, f * 4), sr) * 0.7
     exc_pad = np.zeros(n)
@@ -373,14 +332,12 @@ def gen_piano(freq, sr=SR):
 
     result = to_stereo(c1 * c1_env * 0.4, 0)[:n] + to_stereo(c2 * c2_env * 0.2, 0.3)[:n]
 
-    # Hammer thump
     thump = sine(f * 1.2, 0.04, sr)
     thump_env = env_exp_decay(0.04, 0.5, 0.01, sr)
     thump *= thump_env * 0.15
     thump_s = to_stereo(thump, 0)
     result[:len(thump_s)] += thump_s
 
-    # LP envelope
     for ch in range(2):
         result[:, ch] = filter_sweep(result[:, ch], f * 6, f * 2, sr)
 
@@ -388,8 +345,6 @@ def gen_piano(freq, sr=SR):
     result *= env[:, np.newaxis]
     return result
 
-
-# ======================== GENERATE ========================
 
 INSTRUMENTS = {
     'sub': gen_sub, 'fm': gen_fm, 'glass': gen_glass, 'tape': gen_tape,
@@ -410,8 +365,44 @@ FX_CONFIG = {
 }
 
 
+LABELS = {inst_id: inst_id for inst_id in INSTRUMENTS}
+
+CONFIG = {
+    'id': 'texture',
+    'label': 'texture',
+    'mainGrids': [
+        {'rows': 16, 'cols': 32, 'defaultInstrument': 'glass'},
+        {'rows': 16, 'cols': 32, 'defaultInstrument': 'fm'},
+        {'rows': 16, 'cols': 32, 'defaultInstrument': 'sub'},
+        {'rows': 16, 'cols': 32, 'defaultInstrument': 'dust'},
+    ],
+    'mainGridLayout': {'cols': 2},
+    'melodyGrids': [
+        {'rows': 8, 'cols': 32},
+        {'rows': 8, 'cols': 32},
+    ],
+    'melodyDefaultInstrument': 'pad',
+    'effects': {
+        'reverbWet': 0.22,
+        'reverbDark': 0.8,
+        'reverbLength': 3.5,
+        'delayL': 0.45,
+        'delayR': 0.30,
+        'delayFeedback': 0.4,
+        'delayDarkLP': 1200,
+        'delayWet': 0.24,
+        'compThreshold': -12,
+        'compRatio': 8,
+    },
+    'numPatterns': 8,
+    'defaultMelN': 2,
+    'cellSize': 16,
+    'fx': FX_CONFIG,
+}
+
+
 def generate(out_dir, sr=SR, fmt='ogg'):
-    manifest_insts = []
+    instruments = []
 
     for inst_id, gen_fn in INSTRUMENTS.items():
         freqs = MEL_FREQS if inst_id in MEL_INSTS else FREQS
@@ -420,17 +411,11 @@ def generate(out_dir, sr=SR, fmt='ogg'):
         is_mel = inst_id in MEL_INSTS
 
         print(f'  {inst_id}: {len(freqs)} pitches')
-        manifest_insts.append({
-            'id': inst_id,
-            'label': inst_id,
-            'pitchCount': len(freqs),
-            'type': 'melody' if is_mel else 'main',
-        })
+        segments = []
 
         for i, freq in enumerate(freqs):
             sig = gen_fn(freq, sr)
 
-            # Post-processing
             if tape_drive > 1:
                 for ch in range(sig.shape[1] if sig.ndim > 1 else 1):
                     col = sig[:, ch] if sig.ndim > 1 else sig
@@ -449,11 +434,21 @@ def generate(out_dir, sr=SR, fmt='ogg'):
                 fade_in(col, fade_in_ms, sr)
                 fade_out(col, fade_out_ms, sr)
 
-            path = os.path.join(out_dir, f'{inst_id}_{i}.{fmt}')
-            export_ogg(sig, path, sr)
+            segments.append(sig)
 
-    # Generate reverb IR
+        entry = {
+            'id': inst_id,
+            'label': LABELS[inst_id],
+            'pitchCount': len(freqs),
+            'type': 'melody' if is_mel else 'main',
+        }
+        entry.update(write_sprite(out_dir, inst_id, segments, sr, fmt))
+        instruments.append(entry)
+
     ir = generate_reverb_ir(3.5, dark=0.8, sr=sr)
     export_ogg(ir, os.path.join(out_dir, f'reverb_ir.{fmt}'), sr)
 
-    write_manifest(out_dir, manifest_insts, FX_CONFIG, fmt=fmt)
+    config = dict(CONFIG)
+    config['mainFreqs'] = FREQS
+    config['melodyFreqs'] = MEL_FREQS
+    write_manifest(out_dir, config, instruments, fmt=fmt)

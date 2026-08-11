@@ -26,29 +26,22 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install dependencies
+      - id: cache
+        uses: actions/cache@v4
+        with:
+          path: assets
+          key: assets-${{ hashFiles('build/*.py') }}
+
+      - if: steps.cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update && sudo apt-get install -y ffmpeg
           pip install -r build/requirements.txt
 
-      - name: Build audio assets
+      - if: steps.cache.outputs.cache-hit != 'true'
         run: cd build && python build.py
 
-      # The page animates silently when the assets are missing, so make an
-      # empty build fail here instead of shipping a mute site.
-      - name: Verify assets
-        run: |
-          for mode in original texture clear voices speech; do
-            test -f "assets/$mode/manifest.json" || { echo "missing assets/$mode/manifest.json"; exit 1; }
-            count=$(ls assets/$mode/*.ogg 2>/dev/null | wc -l)
-            [ "$count" -gt 0 ] || { echo "no audio files in assets/$mode"; exit 1; }
-            echo "assets/$mode: $count files"
-          done
+      - run: python build/verify.py
 
-      # enablement:true lets the workflow switch Pages to "GitHub Actions" —
-      # without it the deploy fails with "Get Pages site failed" whenever the
-      # repo is still set to publish from a branch (which serves no assets,
-      # since assets/ is gitignored).
       - uses: actions/configure-pages@v4
         with:
           enablement: true

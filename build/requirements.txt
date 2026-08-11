@@ -1,7 +1,3 @@
 numpy
 scipy
-# Optional — for video analysis (original mode)
-# librosa
-# opencv-python-headless
-# scikit-learn
-# matplotlib
+soundfile
