@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""Render audio from the optimizer's saved state.
-
-Usage:
-    python render.py                        # render to analysis/rendered.wav
-    python render.py -o output.wav          # render to custom path
-    python render.py --defaults             # render from PARAM_DEFAULTS instead
-"""
 
 import argparse, json, os, sys
 import numpy as np
@@ -23,7 +16,6 @@ STATE_PATH = os.path.join(ROOT, 'analysis', 'process', 'optimizer_state.json')
 
 
 def load_from_state():
-    """Load params and patterns from optimizer state."""
     if not os.path.exists(STATE_PATH):
         print(f"ERROR: {STATE_PATH} not found. Run optimize.py first.")
         sys.exit(1)
@@ -72,11 +64,9 @@ def main():
     print(f"  Step ms: {p['step_ms']:.1f}")
     print(f"  Patterns: {len(patterns)}")
 
-    # Render at full sample rate (stereo)
     print(f"  Rendering stereo at {SR}Hz...")
     stereo = render_stereo(x, patterns, sr=SR)
 
-    # Convert to 16-bit WAV
     sig16 = np.clip(stereo, -1, 1)
     sig16 = (sig16 * 32767).astype(np.int16)
 

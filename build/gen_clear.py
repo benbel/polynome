@@ -1,9 +1,3 @@
-"""Generate clear mode audio assets.
-
-Early electronic / Kraftwerk-to-Warp — precise, crystalline, mechanical.
-Sharp envelopes, clean synthesis, one warm element (strings) against cold backdrop.
-"""
-
 import os
 import numpy as np
 from common import (
@@ -11,7 +5,7 @@ from common import (
     env_adsr, env_exp_decay, lowpass, highpass, bandpass,
     moog_ladder, tanh_saturate, comb_filter,
     normalize, fade_in, fade_out, to_stereo, mix_stereo,
-    export_ogg, write_manifest, generate_reverb_ir,
+    export_ogg, write_sprite, write_manifest, generate_reverb_ir,
 )
 
 FREQS = [523, 440, 370, 311, 262, 220, 175, 147, 123, 104, 82, 65, 55, 44, 33, 25]
@@ -30,7 +24,6 @@ def gen_moog_bass(freq, sr=SR):
 
     sig = saw(f, dur, sr)
 
-    # Filter envelope: bright attack sweeping down — restored squelch
     cutoff = np.full(n, f * 0.6)
     env_n = int(sr * 0.4)
     cutoff[:env_n] = np.linspace(800, 80, env_n)
@@ -38,7 +31,6 @@ def gen_moog_bass(freq, sr=SR):
 
     sig = moog_ladder(sig, cutoff, resonance=1.8, sr=sr)
 
-    # Sub sine one octave down
     sub = sine(f * 0.5, dur, sr) * 0.3
 
     mix = sig * 0.7 + sub
@@ -52,29 +44,24 @@ def gen_moog_bass(freq, sr=SR):
 
 
 def gen_pluck(freq, sr=SR):
-    """Waveguide pluck — percussive mid-register, clean metallic string."""
     f = freq
     dur = DURATIONS['pluck']
     n = int(sr * dur)
 
-    # Noise excitation shaped for bright attack
     exc_dur = 0.006
     exc = noise(exc_dur, sr) * 0.9
     exc = bandpass(exc, max(20, f * 0.8), min(sr / 2 - 100, f * 6), sr)
     exc_pad = np.zeros(n)
     exc_pad[:len(exc)] = exc
 
-    # Primary string resonance
     delay1 = max(1, int(sr / f))
     c1 = comb_filter(exc_pad, delay1, feedback=0.92, lp_freq=min(f * 5, sr / 2 - 100), sr=sr)
 
-    # Slight detuned second string for chorus
     delay2 = max(1, int(sr / (f * 1.003)))
     c2 = comb_filter(exc_pad, delay2, feedback=0.90, lp_freq=min(f * 4, sr / 2 - 100), sr=sr)
 
     mix = c1 * 0.6 + c2 * 0.4
 
-    # Bright attack transient
     atk = noise(0.003, sr)
     atk = highpass(atk, min(2000, sr / 2 - 100), sr) * 0.15
     mix[:len(atk)] += atk[:min(len(atk), n)]
@@ -93,7 +80,6 @@ def gen_string_machine(freq, sr=SR):
     n = int(sr * dur)
     t = np.arange(n) / sr
 
-    # 8 detuned saw pairs
     voices = []
     for i in range(8):
         detune = (i - 3.5) * 8
@@ -105,7 +91,6 @@ def gen_string_machine(freq, sr=SR):
 
     mix = mix_stereo(*voices)[:n]
 
-    # Frequency-relative cutoff instead of fixed 4kHz
     cutoff = min(f * 6, sr / 2 - 100)
     for ch in range(2):
         mix[:, ch] = lowpass(mix[:, ch], cutoff, sr)
@@ -150,18 +135,15 @@ def gen_sync(freq, sr=SR):
 
 
 def gen_bell(freq, sr=SR):
-    """FM bell with longer decay and more inharmonic partials."""
     f = freq
     dur = DURATIONS['bell']
     n = int(sr * dur)
     t = np.arange(n) / sr
 
-    # Primary FM: carrier:modulator = 1:3.5
     mod_index = np.linspace(5, 0.1, n)
     modulator = np.sin(2 * np.pi * f * 3.5 * t) * mod_index * f
     carrier = np.sin(2 * np.pi * f * t + modulator / f)
 
-    # Secondary inharmonic partial cloud (1:5.3 and 1:7.1 ratios)
     p2 = np.sin(2 * np.pi * f * 5.3 * t) * 0.15
     p2_env = env_exp_decay(dur, 1, 0.3, sr)
     p3 = np.sin(2 * np.pi * f * 7.1 * t) * 0.08
@@ -222,20 +204,18 @@ def gen_clav(freq, sr=SR):
 
 
 def gen_celesta(freq, sr=SR):
-    """Celesta — inharmonic partial cloud with staggered decays (metal plate model)."""
     f = freq
     dur = DURATIONS['celesta']
     n = int(sr * dur)
     t = np.arange(n) / sr
 
-    # Inharmonic partial series (metal plate ratios, not integer harmonics)
     partials = [
-        (1.0,   0.50, 0.5),   # fundamental
-        (2.76,  0.35, 0.35),   # ~minor 7th + octave
-        (3.01,  0.25, 0.3),    # slightly sharp 12th
-        (5.40,  0.18, 0.2),    # high inharmonic
-        (8.93,  0.10, 0.12),   # shimmer
-        (13.2,  0.05, 0.08),   # sparkle
+        (1.0,   0.50, 0.5),
+        (2.76,  0.35, 0.35),
+        (3.01,  0.25, 0.3),
+        (5.40,  0.18, 0.2),
+        (8.93,  0.10, 0.12),
+        (13.2,  0.05, 0.08),
     ]
 
     sig = np.zeros(n)
@@ -247,7 +227,6 @@ def gen_celesta(freq, sr=SR):
         p_env = env_exp_decay(dur, 1, decay_time, sr)
         sig += partial * p_env
 
-    # Hammer click
     click = noise(0.002, sr)
     click = highpass(click, min(3000, sr / 2 - 100), sr) * 0.12
     sig[:len(click)] += click[:min(len(click), n)]
@@ -277,26 +256,69 @@ FX_CONFIG = {
 }
 
 
+LABELS = {
+    'moog_bass': 'moog bass', 'pluck': 'pluck', 'string_machine': 'strings',
+    'sync': 'sync', 'bell': 'bell', 'wurli': 'wurli', 'clav': 'clav',
+    'celesta': 'celesta',
+}
+
+CONFIG = {
+    'id': 'clear',
+    'label': 'clear',
+    'mainGrids': [
+        {'rows': 16, 'cols': 32, 'defaultInstrument': 'moog_bass'},
+        {'rows': 16, 'cols': 32, 'defaultInstrument': 'pluck'},
+        {'rows': 16, 'cols': 32, 'defaultInstrument': 'string_machine'},
+        {'rows': 16, 'cols': 32, 'defaultInstrument': 'bell'},
+    ],
+    'mainGridLayout': {'cols': 2},
+    'melodyGrids': [
+        {'rows': 8, 'cols': 32},
+        {'rows': 8, 'cols': 32},
+    ],
+    'melodyDefaultInstrument': 'wurli',
+    'effects': {
+        'reverbWet': 0.08,
+        'reverbDark': 0.3,
+        'reverbLength': 1.8,
+        'delayL': 0.38,
+        'delayR': 0.25,
+        'delayFeedback': 0.18,
+        'delayDarkLP': 5000,
+        'delayWet': 0.08,
+        'compThreshold': -20,
+        'compRatio': 2.5,
+    },
+    'numPatterns': 8,
+    'defaultMelN': 2,
+    'cellSize': 16,
+    'fx': FX_CONFIG,
+}
+
+
 def generate(out_dir, sr=SR, fmt='ogg'):
-    manifest_insts = []
+    instruments = []
 
     for inst_id, gen_fn in INSTRUMENTS.items():
-        freqs = MEL_FREQS if inst_id in MEL_INSTS else FREQS
         is_mel = inst_id in MEL_INSTS
+        freqs = MEL_FREQS if is_mel else FREQS
 
         print(f'  {inst_id}: {len(freqs)} pitches')
-        manifest_insts.append({
-            'id': inst_id, 'label': inst_id,
+        segments = [normalize(gen_fn(freq, sr), 0.85) for freq in freqs]
+
+        entry = {
+            'id': inst_id,
+            'label': LABELS[inst_id],
             'pitchCount': len(freqs),
             'type': 'melody' if is_mel else 'main',
-        })
-
-        for i, freq in enumerate(freqs):
-            sig = gen_fn(freq, sr)
-            sig = normalize(sig, 0.85)
-            path = os.path.join(out_dir, f'{inst_id}_{i}.{fmt}')
-            export_ogg(sig, path, sr)
+        }
+        entry.update(write_sprite(out_dir, inst_id, segments, sr, fmt))
+        instruments.append(entry)
 
     ir = generate_reverb_ir(2.5, dark=0.4, sr=sr)
     export_ogg(ir, os.path.join(out_dir, f'reverb_ir.{fmt}'), sr)
-    write_manifest(out_dir, manifest_insts, FX_CONFIG, fmt=fmt)
+
+    config = dict(CONFIG)
+    config['mainFreqs'] = FREQS
+    config['melodyFreqs'] = MEL_FREQS
+    write_manifest(out_dir, config, instruments, fmt=fmt)

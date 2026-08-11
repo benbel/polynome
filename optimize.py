@@ -1,15 +1,4 @@
 #!/usr/bin/env python3
-"""Polynome optimizer — run E/M iterations until stopped.
-
-Fully autonomous: adapts budget, strategy, and block ordering based on
-which parameters are improving. No manual tuning needed.
-
-Usage:
-    python optimize.py           # run until Ctrl+C
-    python optimize.py --reset   # start fresh from PARAM_DEFAULTS
-
-Press Ctrl+C to stop gracefully (saves current best before exit).
-"""
 
 import argparse, json, os, signal, sys, time, csv
 import numpy as np
@@ -28,7 +17,6 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 STATE_PATH = os.path.join(ROOT, 'analysis', 'process', 'optimizer_state.json')
 LOG_PATH = os.path.join(ROOT, 'analysis', 'process', 'optimization_log.csv')
 
-# Graceful shutdown
 _stop = False
 def _handle_signal(sig, frame):
     global _stop
@@ -38,7 +26,6 @@ signal.signal(signal.SIGINT, _handle_signal)
 
 
 def load_state():
-    """Load saved optimizer state, or return defaults."""
     if os.path.exists(STATE_PATH):
         with open(STATE_PATH) as f:
             state = json.load(f)
@@ -65,7 +52,6 @@ def load_state():
 
 
 def save_state(x, patterns, iteration, composite, metrics=None, block_stats=None):
-    """Save optimizer state to disk."""
     os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
     state = {
         'iteration': iteration,
@@ -84,7 +70,6 @@ def save_state(x, patterns, iteration, composite, metrics=None, block_stats=None
 
 
 def log_iteration(iteration, composite, metrics, strategy=''):
-    """Append iteration result to CSV log."""
     os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
     write_header = not os.path.exists(LOG_PATH)
     metric_keys = sorted(metrics.keys())
@@ -101,64 +86,43 @@ ALL_BLOCKS = ['A_synthesis', 'B_harmonics', 'C_body', 'C_eq',
 
 
 def adaptive_strategy(iteration, block_stats, best_composite):
-    """Decide what to do this iteration based on history.
-
-    Returns (strategy, block_order, budget_per_block).
-
-    Strategies:
-    - 'blocks_focused': optimize only blocks that have been improving
-    - 'blocks_full': optimize all blocks (exploration)
-    - 'joint': optimize all params jointly (escape local minima)
-    - 'perturb': random perturbation + local search (shake things up)
-    """
-    # Every 5th iteration: joint optimization to escape local minima
     if iteration % 5 == 0 and iteration > 0:
         return 'joint', ALL_BLOCKS, 150
 
-    # Every 10th iteration: perturbation to explore new regions
     if iteration % 10 == 0 and iteration > 0:
         return 'perturb', ALL_BLOCKS, 100
 
-    # Rank blocks by recent improvement
     block_improvements = {}
     for block in ALL_BLOCKS:
         stats = block_stats.get(block, {})
         recent_deltas = stats.get('recent_deltas', [])
-        # Average improvement over last 3 attempts
         if recent_deltas:
             avg = sum(recent_deltas[-3:]) / len(recent_deltas[-3:])
         else:
-            avg = 0.01  # assume worth trying if no data
+            avg = 0.01
         block_improvements[block] = avg
 
-    # Sort: most productive blocks first
     sorted_blocks = sorted(ALL_BLOCKS, key=lambda b: block_improvements[b], reverse=True)
 
-    # Count how many blocks improved last round
     n_improved = sum(1 for b in ALL_BLOCKS
                      if block_stats.get(b, {}).get('recent_deltas', [0])[-1:] != [0])
 
     if n_improved == 0 and iteration > 2:
-        # Nothing improved last round — do a full sweep with more budget
         return 'blocks_full', sorted_blocks, 80
     else:
-        # Focus on productive blocks, skip stagnant ones (but include all
-        # every 3rd iteration to re-check)
         if iteration % 3 == 0:
             block_order = sorted_blocks
         else:
-            # Only blocks that improved at least once recently
             block_order = [b for b in sorted_blocks
                            if any(d > 0 for d in block_stats.get(b, {}).get('recent_deltas', [0.01])[-3:])]
             if not block_order:
-                block_order = sorted_blocks  # fallback
+                block_order = sorted_blocks
 
         base_budget = 50
         return 'blocks_focused', block_order, base_budget
 
 
 def perturb_params(x, scale=0.05):
-    """Random perturbation within bounds to escape local minima."""
     x_new = x.copy()
     lowers = np.array([b[0] for b in PARAM_BOUNDS])
     uppers = np.array([b[1] for b in PARAM_BOUNDS])
@@ -185,7 +149,6 @@ def main():
     y_ref_full, _ = librosa.load(ref_path, sr=SR, mono=True)
     print(f"  Duration: {len(y_ref_compare)/COMPARE_SR:.1f}s")
 
-    # Load or reset state
     if args.reset or not os.path.exists(STATE_PATH):
         from render_original import PATTERNS
         x = PARAM_DEFAULTS.copy()
@@ -197,7 +160,6 @@ def main():
     else:
         x, patterns, iteration, best_composite, block_stats = load_state()
 
-    # Initial evaluation
     print(f"\n{'='*70}")
     print(f"Initial evaluation...")
     t0 = time.time()
@@ -210,8 +172,7 @@ def main():
     best_x = x.copy()
     best_patterns = patterns
 
-    # Stagnation tracking
-    stagnant_count = 0  # consecutive iterations with no improvement
+    stagnant_count = 0
     prev_composite = best_composite
 
     print(f"\nStarting autonomous E/M optimization (Ctrl+C to stop)...")
@@ -221,7 +182,6 @@ def main():
         iteration += 1
         iter_start = time.time()
 
-        # ── Decide strategy ─────────────────────────────────────────────
         strategy, block_order, budget = adaptive_strategy(
             iteration, block_stats, best_composite)
 
@@ -230,7 +190,6 @@ def main():
               f"current={best_composite:.4f} | stagnant={stagnant_count}")
         print(f"{'='*70}")
 
-        # ── E-step (every 3rd iteration, or after perturbation) ─────────
         do_estep = (iteration % 3 == 1) or strategy == 'perturb'
         if do_estep:
             print(f"\n  [E-step] Inferring button presses...")
@@ -261,7 +220,6 @@ def main():
         if _stop:
             break
 
-        # ── M-step ──────────────────────────────────────────────────────
         if strategy == 'joint':
             print(f"\n  [M-step] Joint CMA-ES ({len(PARAM_SPEC)} params, budget={budget})")
             x_improved, c_improved, n_evals = optimize_joint_cmaes(
@@ -277,8 +235,7 @@ def main():
 
         elif strategy == 'perturb':
             print(f"\n  [M-step] Perturbation + local search")
-            # Try a few random perturbations, keep best
-            scale = 0.03 + 0.02 * min(stagnant_count, 10)  # larger perturbation if more stagnant
+            scale = 0.03 + 0.02 * min(stagnant_count, 10)
             print(f"    Perturbation scale: {scale:.3f}")
             best_perturbed = x.copy()
             best_perturbed_c = best_composite
@@ -295,8 +252,7 @@ def main():
                 else:
                     print(f"    Perturbation {attempt+1}: {c_pert:.4f}")
 
-            # Local search from best perturbation
-            if best_perturbed_c < best_composite * 1.05:  # within 5% — worth refining
+            if best_perturbed_c < best_composite * 1.05:
                 print(f"    Refining from {best_perturbed_c:.4f}...")
                 x_refined, c_refined, n_evals = optimize_joint_cmaes(
                     best_perturbed, patterns, y_ref_compare, budget=budget)
@@ -312,7 +268,6 @@ def main():
                 print(f"    -> Perturbations too far off, skipping refinement")
 
         else:
-            # Block coordinate descent
             print(f"\n  [M-step] Blocks: {', '.join(block_order)} (budget={budget}/block)")
 
             for block_name in block_order:
@@ -327,13 +282,12 @@ def main():
                 x_before = x.copy()
                 c_before = best_composite
 
-                # Adaptive budget per block: give more to productive blocks
                 stats = block_stats.get(block_name, {})
                 recent = stats.get('recent_deltas', [])
                 if recent and max(recent[-3:]) > 0.001:
-                    block_budget = int(budget * 1.5)  # productive — invest more
+                    block_budget = int(budget * 1.5)
                 elif recent and max(recent[-3:]) == 0:
-                    block_budget = int(budget * 0.5)  # stagnant — spend less
+                    block_budget = int(budget * 0.5)
                 else:
                     block_budget = budget
 
@@ -353,24 +307,19 @@ def main():
                     delta = 0
                     print(f"      -> No improvement ({n_evals} evals)")
 
-                # Update block stats
                 if block_name not in block_stats:
                     block_stats[block_name] = {'recent_deltas': [], 'total_evals': 0}
                 block_stats[block_name]['recent_deltas'].append(round(delta, 6))
-                # Keep last 10
                 block_stats[block_name]['recent_deltas'] = \
                     block_stats[block_name]['recent_deltas'][-10:]
                 block_stats[block_name]['total_evals'] = \
                     block_stats[block_name].get('total_evals', 0) + n_evals
 
-        # ── End of iteration ────────────────────────────────────────────
         elapsed = time.time() - iter_start
 
-        # Full evaluation for logging
         y_eval = render_with_params(best_x, best_patterns, fast=False)
         c_eval, m_eval = compute_composite(y_eval, y_ref_compare)
 
-        # Stagnation tracking
         if c_eval >= prev_composite - 1e-5:
             stagnant_count += 1
         else:
@@ -383,12 +332,10 @@ def main():
               f"time={elapsed:.0f}s")
         print(f"      Metrics: {', '.join(f'{k}={v:.3f}' for k, v in sorted(m_eval.items()))}")
 
-        # Save state and log
         save_state(best_x, best_patterns, iteration, c_eval, m_eval, block_stats)
         log_iteration(iteration, c_eval, m_eval, strategy)
         print(f"      Saved.")
 
-    # ── Final save on exit ──────────────────────────────────────────────
     print(f"\n{'='*70}")
     print(f"STOPPED after iteration {iteration}")
     print(f"Best composite: {best_composite:.4f}")
@@ -400,7 +347,6 @@ def main():
     c_final, m_final = compute_composite(y_final, y_ref_compare)
     save_state(best_x, best_patterns, iteration, c_final, m_final, block_stats)
 
-    # Block performance summary
     print(f"\nBlock performance summary:")
     for block in ALL_BLOCKS:
         stats = block_stats.get(block, {})

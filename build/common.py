@@ -1,14 +1,11 @@
-"""Shared DSP library for audio generation."""
-
 import numpy as np
-from scipy.signal import sosfilt, butter
+from scipy.signal import sosfilt, butter, lfilter
 from scipy.io import wavfile
-import subprocess, json, os
+import soundfile
+import json, os
 
 SR = 44100
 
-
-# ======================== OSCILLATORS ========================
 
 def sine(freq, dur, sr=SR):
     t = np.arange(int(sr * dur)) / sr
@@ -43,8 +40,6 @@ def stereo_noise(dur, sr=SR):
     return np.column_stack([noise(dur, sr), noise(dur, sr)])
 
 
-# ======================== ENVELOPES ========================
-
 def env_adsr(dur, attack, decay, sustain, release, sr=SR):
     n = int(sr * dur)
     a = int(sr * attack)
@@ -70,8 +65,6 @@ def env_exp_decay(dur, attack_ms, decay_time, sr=SR):
     env[a:] = np.exp(-t / max(decay_time, 0.001))
     return env
 
-
-# ======================== FILTERS ========================
 
 def lowpass(sig, freq, sr=SR, order=4):
     freq = np.clip(freq, 20, sr / 2 - 1)
@@ -114,7 +107,6 @@ def filter_sweep(sig, start_freq, end_freq, sr=SR, order=4, block_size=256):
 
 
 def moog_ladder(sig, cutoff_hz, resonance, sr=SR):
-    """4-pole resonant ladder filter (Huovilainen model)."""
     if isinstance(cutoff_hz, (int, float)):
         cutoff_hz = np.full(len(sig), cutoff_hz)
     s = [0.0, 0.0, 0.0, 0.0]
@@ -129,8 +121,6 @@ def moog_ladder(sig, cutoff_hz, resonance, sr=SR):
         out[i] = s[3]
     return out
 
-
-# ======================== WAVESHAPING ========================
 
 def wavefold(sig, folds=3):
     x = sig * folds
@@ -174,8 +164,6 @@ def comb_filter(sig, delay_samples, feedback=0.7, lp_freq=None, sr=SR):
     return out
 
 
-# ======================== UTILITIES ========================
-
 def normalize(sig, peak=0.85):
     mx = np.max(np.abs(sig))
     if mx > 0:
@@ -183,17 +171,22 @@ def normalize(sig, peak=0.85):
     return sig
 
 
+def _ramp(n, start, stop, ndim):
+    ramp = np.linspace(start, stop, n)
+    return ramp[:, np.newaxis] if ndim == 2 else ramp
+
+
 def fade_in(sig, ms, sr=SR):
-    n = int(sr * ms / 1000)
+    n = min(int(sr * ms / 1000), len(sig))
     if n > 0:
-        sig[:n] *= np.linspace(0, 1, n)
+        sig[:n] *= _ramp(n, 0, 1, sig.ndim)
     return sig
 
 
 def fade_out(sig, ms, sr=SR):
-    n = int(sr * ms / 1000)
+    n = min(int(sr * ms / 1000), len(sig))
     if n > 0:
-        sig[-n:] *= np.linspace(1, 0, n)
+        sig[-n:] *= _ramp(n, 1, 0, sig.ndim)
     return sig
 
 
@@ -213,38 +206,167 @@ def mix_stereo(*signals):
     return out
 
 
+WRITE_BLOCK = 44100
+
+
 def export_ogg(stereo_signal, path, sr=SR):
-    wav_path = path.replace('.ogg', '.wav')
-    sig16 = np.clip(stereo_signal, -1, 1)
-    sig16 = (sig16 * 32767).astype(np.int16)
-    wavfile.write(wav_path, sr, sig16)
-    if path.endswith('.ogg'):
-        subprocess.run([
-            'ffmpeg', '-y', '-i', wav_path,
-            '-c:a', 'libvorbis', '-q:a', '3', path
-        ], capture_output=True)
-        os.remove(wav_path)
+    signal = np.ascontiguousarray(np.clip(stereo_signal, -1, 1), dtype='float32')
+
+    if not path.endswith('.ogg'):
+        wavfile.write(path, sr, (signal * 32767).astype(np.int16))
+        return
+
+    channels = signal.shape[1] if signal.ndim > 1 else 1
+    with soundfile.SoundFile(path, 'w', samplerate=sr, channels=channels,
+                             format='OGG', subtype='VORBIS') as f:
+        for i in range(0, len(signal), WRITE_BLOCK):
+            f.write(signal[i:i + WRITE_BLOCK])
 
 
-def write_manifest(out_dir, instruments, fx_config, fmt='ogg'):
-    manifest = {
-        'format': fmt,
-        'instruments': [
-            {
-                'id': inst['id'], 'label': inst['label'],
-                'pitchCount': inst['pitchCount'],
-                'type': inst.get('type', 'main'),
-            }
-            for inst in instruments
-        ],
-        'fx': fx_config,
+SPRITE_LEAD = 0.005
+SPRITE_GAP = 0.2
+
+
+def write_sprite(out_dir, inst_id, segments, sr=SR, fmt='ogg'):
+    lead = np.zeros((int(sr * SPRITE_LEAD), 2))
+    gap = np.zeros((int(sr * SPRITE_GAP), 2))
+    parts = []
+    offsets = []
+    pos = 0
+
+    for seg in segments:
+        if seg.ndim == 1:
+            seg = to_stereo(seg, 0)
+        block = np.concatenate([lead, seg])
+        offsets.append([round(pos / sr, 6), round(len(block) / sr, 6)])
+        parts.append(block)
+        parts.append(gap)
+        pos += len(block) + len(gap)
+
+    audio = np.concatenate(parts) if parts else np.zeros((1, 2))
+    export_ogg(audio, os.path.join(out_dir, f'{inst_id}.{fmt}'), sr)
+
+    return {
+        'sprite': f'{inst_id}.{fmt}',
+        'spriteDuration': round(len(audio) / sr, 6),
+        'offsets': offsets,
     }
+
+
+def write_manifest(out_dir, config, instruments, fmt='ogg'):
+    manifest = dict(config)
+    manifest['format'] = fmt
+    manifest['sampleRate'] = SR
+    manifest['instruments'] = instruments
     with open(os.path.join(out_dir, 'manifest.json'), 'w') as f:
         json.dump(manifest, f, indent=2)
 
 
+FORMANTS = {
+    'a': [(730, 90), (1090, 110), (2440, 170), (3400, 250)],
+    'e': [(530, 80), (1840, 150), (2480, 180), (3320, 250)],
+    'i': [(270, 60), (2290, 200), (3010, 200), (3300, 250)],
+    'o': [(570, 80), (840, 100), (2410, 170), (3400, 250)],
+    'u': [(300, 60), (870, 100), (2240, 170), (3200, 250)],
+    'schwa': [(500, 100), (1500, 130), (2500, 200), (3400, 250)],
+    'm': [(280, 90), (1100, 180), (2200, 250), (3200, 300)],
+    'n': [(280, 90), (1700, 200), (2600, 250), (3300, 300)],
+}
+
+
+def fold_to_voice(freq, lo=75, hi=880):
+    f = float(freq)
+    while f < lo:
+        f *= 2
+    while f > hi:
+        f /= 2
+    return f
+
+
+def scale_tract(formants, factor):
+    return [(f * factor, bw * max(0.6, factor)) for f, bw in formants]
+
+
+def smooth_noise(n, cutoff, sr=SR):
+    x = lowpass(np.random.randn(n), cutoff, sr)
+    spread = np.std(x)
+    return x / spread if spread > 0 else x
+
+
+def f0_contour(freq, dur, sr=SR, vibrato_rate=5.0, vibrato_cents=0,
+               vibrato_onset=0.35, jitter=0.005, drift_cents=0):
+    n = int(sr * dur)
+    t = np.arange(n) / sr
+    semitones = np.zeros(n)
+
+    if vibrato_cents:
+        onset = np.clip(t / max(vibrato_onset, 1e-6), 0, 1)
+        semitones += vibrato_cents / 100 * np.sin(2 * np.pi * vibrato_rate * t) * onset
+
+    if drift_cents:
+        semitones += drift_cents / 100 * np.linspace(0, 1, n)
+
+    contour = freq * np.power(2, semitones / 12)
+    if jitter:
+        contour = contour * (1 + smooth_noise(n, 25, sr) * jitter)
+    return contour
+
+
+def glottal_flow(contour, sr=SR, open_quotient=0.6, shimmer=0.03, aspiration=0.0):
+    n = len(contour)
+    cycle = np.cumsum(contour / sr) % 1.0
+    oq = open_quotient
+    opening = oq * 0.8
+
+    flow = np.zeros(n)
+    rising = cycle < opening
+    closing = (cycle >= opening) & (cycle < oq)
+    x = np.clip(cycle / opening, 0, 1)
+    flow[rising] = (3 * x ** 2 - 2 * x ** 3)[rising]
+    y = np.clip((cycle - opening) / (oq - opening), 0, 1)
+    flow[closing] = (1 - y ** 2)[closing]
+
+    if shimmer:
+        flow = flow * (1 + smooth_noise(n, 12, sr) * shimmer)
+
+    source = np.diff(flow, prepend=0)
+    if aspiration:
+        breath = highpass(np.random.uniform(-1, 1, n), 300, sr)
+        source = source + breath * aspiration * np.sqrt(np.mean(source ** 2)) * 4
+    return source
+
+
+def vocal_tract(source, start, end=None, sr=SR, block=256):
+    if end is None:
+        end = start
+    out = np.asarray(source, dtype=float)
+    n = len(out)
+    nblocks = max(1, int(np.ceil(n / block)))
+
+    for fi in range(min(len(start), len(end))):
+        f_a, bw_a = start[fi]
+        f_b, bw_b = end[fi]
+        filtered = np.zeros(n)
+        zi = np.zeros(2)
+        for b in range(nblocks):
+            lo = b * block
+            hi = min(n, lo + block)
+            if lo >= hi:
+                break
+            k = b / max(1, nblocks - 1)
+            f = float(np.clip(f_a + (f_b - f_a) * k, 30, sr / 2 - 200))
+            bw = float(np.clip(bw_a + (bw_b - bw_a) * k, 20, 1000))
+            r = np.exp(-np.pi * bw / sr)
+            a1 = 2 * r * np.cos(2 * np.pi * f / sr)
+            a2 = -r * r
+            b0 = 1 - a1 - a2
+            filtered[lo:hi], zi = lfilter([b0], [1, -a1, -a2], out[lo:hi], zi=zi)
+        out = filtered
+
+    return out
+
+
 def generate_reverb_ir(length_s, dark=0.8, sr=SR):
-    """Generate a reverb impulse response."""
     n = int(sr * length_s)
     ir = np.zeros((n, 2))
     for ch in range(2):

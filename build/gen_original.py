@@ -1,21 +1,100 @@
-"""Generate original mode audio assets.
-
-Warm, woody, marimba-like tone with natural decay.
-Matches the monome Press Cafe timbral profile.
-"""
-
 import os, json
 import numpy as np
 from common import (
     SR, sine, noise, env_exp_decay, env_adsr,
     lowpass, highpass, bandpass, comb_filter,
     asymmetric_saturate, normalize, fade_in, fade_out,
-    to_stereo, mix_stereo, export_ogg, write_manifest, generate_reverb_ir,
+    to_stereo, mix_stereo, export_ogg, write_sprite, write_manifest, generate_reverb_ir,
 )
 
 DEFAULT_FREQS = [448, 540, 585, 375, 322, 243, 239, 173]
 
-# CMA-ES optimized tone (block coordinate descent, runs 1-2)
+COL_SEQS = [
+    [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0],
+    [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+    [1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1],
+    [1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1],
+    [1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0],
+    [1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+    [1, 1, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 1],
+    [1, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0],
+    [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+    [1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0],
+    [1, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0],
+    [1, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0],
+    [0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0],
+    [1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1],
+    [0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0],
+    [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0],
+]
+
+STEP_VELS = [v / 127 for v in
+             [127, 36, 64, 36, 127, 36, 64, 36, 127, 36, 72, 36, 127, 36, 90, 36]]
+
+PATTERN_CELLS = [
+    {'0-1': 1.0},
+    {'0-1': 1.0, '1-1': 1.0},
+    {'0-1': 1.0},
+    {'0-1': 1.0, '1-2': 1.0},
+    {'0-1': 1.0},
+    {'0-1': 1.0, '1-3': 1.0},
+    {'0-1': 1.0, '2-3': 1.0},
+    {'0-1': 1.0, '3-3': 1.0},
+    {'0-1': 1.0, '4-3': 1.0},
+    {'0-1': 1.0, '4-3': 1.0, '2-5': 1.0},
+    {'0-1': 1.0, '4-3': 1.0, '1-5': 1.0},
+    {'0-1': 1.0, '4-3': 1.0, '3-5': 1.0},
+    {'0-1': 1.0, '4-3': 1.0, '2-5': 1.0},
+    {'0-1': 1.0, '4-3': 1.0, '3-5': 1.0},
+    {'0-1': 1.0, '4-3': 1.0, '3-5': 1.0, '6-5': 1.0},
+    {'0-1': 1.0, '4-3': 1.0, '3-5': 1.0, '7-5': 1.0},
+    {'0-1': 1.0, '4-3': 1.0, '3-5': 1.0, '6-5': 1.0},
+    {'0-1': 1.0, '4-3': 1.0, '3-5': 1.0, '7-5': 1.0},
+    {'0-1': 1.0, '4-3': 1.0, '1-7': 1.0, '7-5': 1.0},
+    {'0-1': 1.0, '4-3': 1.0, '3-5': 1.0, '1-7': 1.0, '7-5': 1.0},
+    {'0-1': 1.0, '4-3': 1.0, '3-5': 1.0, '1-7': 1.0, '7-5': 1.0, '2-5': 1.0},
+    {'0-1': 1.0, '4-3': 1.0, '3-5': 1.0, '1-7': 1.0, '7-5': 1.0},
+    {'0-1': 1.0, '4-3': 1.0, '3-5': 1.0, '1-7': 1.0, '7-5': 1.0, '2-5': 1.0},
+    {'0-1': 1.0, '4-3': 1.0, '3-5': 1.0, '1-7': 1.0, '7-5': 1.0},
+    {'0-1': 1.0, '4-3': 1.0, '3-5': 1.0, '1-7': 1.0, '7-5': 1.0, '2-5': 1.0},
+    {'0-1': 1.0, '1-7': 1.0, '2-10': 1.0, '4-3': 1.0, '7-5': 1.0},
+]
+
+CONFIG = {
+    'id': 'original',
+    'label': 'original',
+    'mainGrids': [
+        {'rows': 8, 'cols': 16, 'defaultInstrument': 'tone'},
+    ],
+    'mainGridLayout': {'cols': 1},
+    'melodyGrids': None,
+    'effects': {
+        'reverbWet': 0.08,
+        'reverbDark': 0.35,
+        'reverbLength': 1.0,
+        'delayL': 0.33,
+        'delayR': 0.22,
+        'delayFeedback': 0.25,
+        'delayDarkLP': 3000,
+        'delayWet': 0.15,
+        'compThreshold': -18,
+        'compRatio': 4,
+    },
+    'fx': {'tone': {'delay': 0.15, 'reverb': 0.25, 'gain': 1.0}},
+    'defaultStepMs': 74,
+    'numPatterns': len(PATTERN_CELLS),
+    'cellSize': 28,
+    'seqLen': 16,
+    'colSeqs': COL_SEQS,
+    'stepVels': STEP_VELS,
+    'hideControls': ['melody'],
+    'defaultPatterns': [
+        {'grids': [{'cells': cells, 'instrument': 'tone'}],
+         'melody': {'cells': {}, 'instrument': 'tone'}}
+        for cells in PATTERN_CELLS
+    ],
+}
+
 DEFAULT_ENVELOPE = {
     'attack_ms': 0.11,
     'decay_time': 0.259,
@@ -30,8 +109,6 @@ def gen_tone(freq, env_profile, sr=SR):
     n = int(sr * dur)
     t = np.arange(n) / sr
 
-    # --- Mallet attack transient ---
-    # Short noise burst filtered around fundamental for woody thump
     atk_dur = 0.008
     atk_n = int(sr * atk_dur)
     atk = noise(atk_dur, sr)
@@ -39,7 +116,6 @@ def gen_tone(freq, env_profile, sr=SR):
     atk_env = env_exp_decay(atk_dur, 0.2, 0.003, sr)
     atk *= atk_env * 0.125
 
-    # --- Tonal body: slightly detuned partials for warmth ---
     sig = np.zeros(n)
     ratios = env_profile['harmonic_ratios']
     amps_db = env_profile['harmonic_amplitudes_db']
@@ -52,27 +128,21 @@ def gen_tone(freq, env_profile, sr=SR):
         amp = 10 ** (amps_db[h] / 20)
         sig += amp * np.sin(2 * np.pi * partial_freq * t)
 
-    # --- Body resonance: low-mid bump via comb resonator ---
     body_exc = np.zeros(n)
     body_exc[:atk_n] = atk[:min(atk_n, len(atk))]
     delay = max(1, int(sr / freq))
     body = comb_filter(body_exc, delay, feedback=0.085, lp_freq=min(freq * 3, sr / 2 - 100), sr=sr)
     body *= 0.138
 
-    # Combine tonal + body
     sig = sig + body[:n]
 
-    # Envelope — longer natural decay
     env = env_exp_decay(dur, env_profile['attack_ms'], env_profile['decay_time'], sr)
     sig *= env
 
-    # Insert attack transient
     sig[:len(atk)] += atk[:min(len(atk), n)]
 
-    # Gentle warmth — minimal asymmetric saturation
     sig = asymmetric_saturate(sig, drive=1.37, asymmetry=0.080)
 
-    # High-frequency boost to match reference brightness
     sig_hp = highpass(sig, 1500, sr) * 2.78
     sig = sig + sig_hp
 
@@ -102,17 +172,14 @@ def generate(out_dir, sr=SR, fmt='ogg'):
             env_profile = json.load(f)
 
     print(f'  tone: {len(freqs)} pitches')
-    for i, freq in enumerate(freqs):
-        sig = gen_tone(freq, env_profile, sr)
-        sig = normalize(sig, 0.85)
-        path = os.path.join(out_dir, f'tone_{i}.{fmt}')
-        export_ogg(sig, path, sr)
+    segments = [normalize(gen_tone(freq, env_profile, sr), 0.85) for freq in freqs]
+
+    entry = {'id': 'tone', 'label': 'tone', 'pitchCount': len(freqs), 'type': 'main'}
+    entry.update(write_sprite(out_dir, 'tone', segments, sr, fmt))
 
     ir = generate_reverb_ir(2.0, dark=0.5, sr=sr)
     export_ogg(ir, os.path.join(out_dir, f'reverb_ir.{fmt}'), sr)
 
-    write_manifest(out_dir, [
-        {'id': 'tone', 'label': 'tone', 'pitchCount': len(freqs), 'type': 'main'}
-    ], {
-        'tone': {'delay': 0.15, 'reverb': 0.25, 'gain': 0.3}
-    }, fmt=fmt)
+    config = dict(CONFIG)
+    config['mainFreqs'] = list(freqs)
+    write_manifest(out_dir, config, [entry], fmt=fmt)

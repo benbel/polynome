@@ -1,46 +1,29 @@
 #!/usr/bin/env python3
-"""Build entry point: generate audio assets for polynome modes.
-
-Usage:
-    python build/build.py                   # all modes
-    python build/build.py texture clear     # specific modes
-    python build/build.py --format wav      # WAV instead of OGG
-"""
-
-import sys, os, importlib
+import argparse, importlib, json, os, sys
 
 MODES = ['original', 'texture', 'clear', 'voices', 'speech']
 
 
 def main():
-    args = sys.argv[1:]
-    fmt = 'ogg'
-    modes = []
+    parser = argparse.ArgumentParser(description='generate audio assets for polynome modes')
+    parser.add_argument('modes', nargs='*', metavar='mode',
+                        help=f'modes to build, any of: {", ".join(MODES)} (default: all)')
+    parser.add_argument('--format', default='ogg', choices=['ogg', 'wav'],
+                        help='audio file format (default: ogg)')
+    args = parser.parse_args()
 
-    for arg in args:
-        if arg == '--format':
-            continue
-        if args[args.index(arg) - 1] == '--format' if args.index(arg) > 0 else False:
-            fmt = arg
-            continue
-        if arg.startswith('--format='):
-            fmt = arg.split('=', 1)[1]
-            continue
-        if arg in MODES:
-            modes.append(arg)
+    unknown = [m for m in args.modes if m not in MODES]
+    if unknown:
+        parser.error(f'unknown mode(s): {", ".join(unknown)}')
 
-    if not modes:
-        modes = MODES
-
-    # Parse --format properly
-    for i, arg in enumerate(args):
-        if arg == '--format' and i + 1 < len(args):
-            fmt = args[i + 1]
-
+    modes = args.modes or MODES
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    assets = os.path.join(root, 'assets')
+    os.makedirs(assets, exist_ok=True)
 
+    built = []
     for mode in modes:
-        out_dir = os.path.join(root, 'assets', mode)
+        out_dir = os.path.join(assets, mode)
         os.makedirs(out_dir, exist_ok=True)
 
         try:
@@ -49,9 +32,18 @@ def main():
             print(f'[skip] gen_{mode}.py not found')
             continue
 
-        print(f'[build] {mode} -> {out_dir} ({fmt})')
-        gen_module.generate(out_dir, fmt=fmt)
+        print(f'[build] {mode} -> {out_dir} ({args.format})')
+        gen_module.generate(out_dir, fmt=args.format)
+        built.append(mode)
         print(f'[done] {mode}')
+
+    index = [m for m in MODES
+             if m in built or os.path.exists(os.path.join(assets, m, 'manifest.json'))]
+    with open(os.path.join(assets, 'modes.json'), 'w') as f:
+        json.dump(index, f)
+
+    if not built:
+        sys.exit('nothing built')
 
 
 if __name__ == '__main__':

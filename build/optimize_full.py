@@ -1,15 +1,4 @@
 #!/usr/bin/env python3
-"""Full parameterized optimizer for original mode audio.
-
-Parameterizes the entire rendering pipeline (synthesis, effects, patterns, timing)
-and uses EM-style optimization to minimize composite distance to the reference.
-
-E-step: Given current sound model, infer button press timeline from reference audio
-M-step: Given button presses, optimize all synthesis/effects parameters
-
-Usage:
-    python build/optimize_full.py [--ref analysis/reference.wav] [--em-iters 3]
-"""
 
 import argparse, json, os, sys, time
 import numpy as np
@@ -25,7 +14,6 @@ from common import (
     to_stereo, generate_reverb_ir,
 )
 
-# ── Column sequences (fixed from amxd) ──────────────────────────────────────
 COL_SEQS = [
     [1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0],
     [1,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0],
@@ -49,14 +37,12 @@ STEP_VELS = [127,36,64,36,127,36,64,36,127,36,72,36,127,36,90,36]
 STEP_VELS = [v / 127 for v in STEP_VELS]
 SEQ_LEN = 16
 STEPS_PER_PATTERN = 64
-COMPARE_SR = 22050  # sample rate used by compare_audio.py
+COMPARE_SR = 22050
 
-# Cached reference envelope (computed once on first use)
 _ref_envelope_cache = {}
 
 
 def get_reference_envelope(sr):
-    """Load and cache the reference RMS envelope at the given sample rate."""
     if sr in _ref_envelope_cache:
         return _ref_envelope_cache[sr]
 
@@ -65,7 +51,7 @@ def get_reference_envelope(sr):
     if not os.path.exists(ref_path):
         return None
 
-    env_sr = sr // 2  # downsample for speed
+    env_sr = sr // 2
     y_ref, _ = librosa.load(ref_path, sr=env_sr, mono=True)
     frame_len = int(env_sr * 0.5)
     hop = frame_len // 4
@@ -76,12 +62,7 @@ def get_reference_envelope(sr):
     return _ref_envelope_cache[sr]
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Parameter packing/unpacking
-# ══════════════════════════════════════════════════════════════════════════════
-
 PARAM_SPEC = [
-    # Synthesis params (run 4 — block A optimized)
     ('attack_ms',       0.073,  0.05,  15.0),
     ('decay_time',      0.278,  0.02,   1.5),
     ('drive',           1.171,  1.0,    4.0),
@@ -90,7 +71,6 @@ PARAM_SPEC = [
     ('comb_feedback',   0.159,  0.0,    0.95),
     ('comb_mix',        0.186,  0.0,    0.5),
     ('attack_level',    0.497,  0.0,    1.0),
-    # Harmonic amplitudes (run 4 — block B optimized)
     ('harm_1_db',       -5.5,  -30.0,   0.0),
     ('harm_2_db',       -1.9,  -30.0,   0.0),
     ('harm_3_db',      -25.6,  -40.0,   0.0),
@@ -100,34 +80,28 @@ PARAM_SPEC = [
     ('harm_7_db',      -11.6,  -50.0,   0.0),
     ('harm_8_db',      -47.4,  -60.0,   0.0),
     ('harm_9_db',      -28.5,  -60.0,   0.0),
-    # Body resonance formants
     ('body_res_1_freq',  795,  200,   2000),
     ('body_res_1_q',     1.86, 0.5,   10.0),
     ('body_res_1_amp',   0.008,0.0,    1.0),
     ('body_res_2_freq', 1551,  500,   4000),
     ('body_res_2_q',     3.38, 0.5,   10.0),
     ('body_res_2_amp',   0.049,0.0,    1.0),
-    # Per-harmonic decay and attack brightness
     ('harm_decay_slope', 0.005,0.0,    5.0),
     ('attack_brightness',0.829,0.2,    5.0),
-    # Post-mix spectral shaping EQ (run 4 — block C_eq optimized)
     ('eq_low_gain_db',   0.73, -12.0,  12.0),
     ('eq_low_freq',    369.5,  80.0, 500.0),
     ('eq_mid_gain_db',   3.59, -12.0,  12.0),
     ('eq_mid_freq',   1209.1, 300.0, 3000.0),
     ('eq_hi_gain_db',   -8.54, -12.0,  12.0),
     ('eq_hi_freq',    3691.6, 1500.0, 8000.0),
-    # Effects
     ('reverb_wet',      0.118,  0.0,    0.5),
     ('reverb_length',   1.75,   0.2,    3.0),
     ('reverb_dark',     0.371,  0.0,    0.9),
     ('delay_wet',       0.087,  0.0,    0.5),
     ('delay_feedback',  0.067,  0.0,    0.7),
     ('delay_dark_lp',   1502,   500,   8000),
-    # Timing & level
     ('step_ms',         61.5,   50.0,  120.0),
     ('target_rms',      0.37,   0.10,   0.60),
-    # Frequencies (run 4 — block E optimized)
     ('freq_0',          578.4,  130,    800),
     ('freq_1',          417.5,  130,    800),
     ('freq_2',          347.8,  110,    800),
@@ -144,23 +118,16 @@ PARAM_BOUNDS = [(p[2], p[3]) for p in PARAM_SPEC]
 
 
 def unpack_params(x):
-    """Convert parameter vector to named dict."""
     p = {}
     for i, (name, _, _, _) in enumerate(PARAM_SPEC):
         p[name] = float(x[i])
 
-    # Reconstruct harmonic_amps_db list (fundamental is always 0 dB)
     p['harmonic_amps_db'] = [0.0] + [p[f'harm_{i}_db'] for i in range(1, 10)]
     p['freqs'] = [p[f'freq_{i}'] for i in range(8)]
     return p
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Parameterized synthesis
-# ══════════════════════════════════════════════════════════════════════════════
-
 def gen_tone_param(freq, p, sr=SR):
-    """Generate a single tone with given parameters."""
     dur = 0.9
     n = int(sr * dur)
     t = np.arange(n) / sr
@@ -168,18 +135,15 @@ def gen_tone_param(freq, p, sr=SR):
     harm_decay_slope = p.get('harm_decay_slope', 0.0)
     attack_brightness = p.get('attack_brightness', 1.0)
 
-    # Attack transient
     atk_dur = 0.008
     atk_n = int(sr * atk_dur)
     atk = noise(atk_dur, sr)
     atk = bandpass(atk, max(20, freq * 0.5), min(sr/2 - 100, freq * 4), sr)
-    # Apply attack_brightness: highpass to add spectral tilt
     atk_hp_freq = np.clip(freq * attack_brightness, 20, sr / 2 - 1)
     atk = highpass(atk, atk_hp_freq, sr)
     atk_env = env_exp_decay(atk_dur, 0.2, 0.003, sr)
     atk *= atk_env * p['attack_level']
 
-    # Tonal body with per-harmonic decay
     sig = np.zeros(n)
     amps_db = p['harmonic_amps_db']
     decay_time = max(p['decay_time'], 0.001)
@@ -188,11 +152,9 @@ def gen_tone_param(freq, p, sr=SR):
         if partial_freq >= sr / 2:
             break
         amp = 10 ** (amps_db[h] / 20)
-        # Per-harmonic envelope: higher harmonics decay faster
         env_h = np.exp(-t * (1.0 / decay_time + harm_decay_slope * h))
         sig += amp * np.sin(2 * np.pi * partial_freq * t) * env_h
 
-    # Body resonance via comb filter
     if p['comb_mix'] > 0.001:
         body_exc = np.zeros(n)
         body_exc[:atk_n] = atk[:min(atk_n, len(atk))]
@@ -203,34 +165,28 @@ def gen_tone_param(freq, p, sr=SR):
         body *= p['comb_mix']
         sig = sig + body[:n]
 
-    # Body resonance formants (two resonant bandpass filters)
     from scipy.signal import iirpeak, sosfilt as _sosfilt
     for res_idx in [1, 2]:
         res_freq = p.get(f'body_res_{res_idx}_freq', 500)
         res_q = p.get(f'body_res_{res_idx}_q', 2.0)
         res_amp = p.get(f'body_res_{res_idx}_amp', 0.0)
         if res_amp > 0.001 and 20 < res_freq < sr / 2 - 1:
-            # iirpeak returns (b, a) for a peak/notch filter
-            w0 = res_freq / (sr / 2)  # normalized frequency
+            w0 = res_freq / (sr / 2)
             w0 = np.clip(w0, 0.001, 0.999)
             b_peak, a_peak = iirpeak(w0, res_q)
             from scipy.signal import lfilter
             resonance = lfilter(b_peak, a_peak, sig)
             sig = sig + resonance * res_amp
 
-    # Attack envelope (applied on top of per-harmonic decay)
     a_samples = int(sr * p['attack_ms'] / 1000)
     if a_samples > 0 and a_samples < n:
         attack_env = np.linspace(0, 1, a_samples)
         sig[:a_samples] *= attack_env
 
-    # Insert attack
     sig[:len(atk)] += atk[:min(len(atk), n)]
 
-    # Saturation
     sig = asymmetric_saturate(sig, drive=p['drive'], asymmetry=p['asymmetry'])
 
-    # HF boost
     if p['hf_boost'] > 0.01:
         sig_hp = highpass(sig, 1500, sr) * p['hf_boost']
         sig = sig + sig_hp
@@ -241,20 +197,10 @@ def gen_tone_param(freq, p, sr=SR):
     return sig
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Parameterized rendering
-# ══════════════════════════════════════════════════════════════════════════════
-
 def render_with_params(x, patterns, fast=False):
-    """Full render pipeline with parameter vector x and given patterns.
-
-    If fast=True, renders at half sample rate for speed.
-    Returns mono audio at COMPARE_SR for comparison.
-    """
     p = unpack_params(x)
-    sr = COMPARE_SR if fast else SR  # render at COMPARE_SR directly in fast mode (skip resample)
+    sr = COMPARE_SR if fast else SR
 
-    # Pre-render samples
     freqs = p['freqs']
     samples = []
     for freq in freqs:
@@ -266,16 +212,12 @@ def render_with_params(x, patterns, fast=False):
     total_steps = len(patterns) * STEPS_PER_PATTERN
     total_samples = total_steps * step_samples + max(len(s) for s in samples)
 
-    # Dry mix (stereo)
     mix = np.zeros((total_samples, 2))
 
-    # Track per-row activation step (button press = start of pattern for that row)
-    # Each row's sequence phase starts from 0 when it first appears
-    row_start_step = {}  # row -> global_step when first activated
+    row_start_step = {}
 
     global_step = 0
     for pi, pattern in enumerate(patterns):
-        # Detect newly activated rows at pattern boundary
         pattern_start = global_step
         for (row, col), vel in pattern.items():
             if row not in row_start_step:
@@ -285,10 +227,7 @@ def render_with_params(x, patterns, fast=False):
             offset = global_step * step_samples
 
             for (row, col), vel in pattern.items():
-                # Per-row sequence index: phase starts from 0 when row was activated
                 row_seq_idx = (global_step - row_start_step[row]) % SEQ_LEN
-                # COL_SEQS model: each column has a 16-step rhythm pattern
-                # Cell (row, col) means row plays column's rhythm sequence
                 if col < len(COL_SEQS) and COL_SEQS[col][row_seq_idx]:
                     vol = vel * STEP_VELS[row_seq_idx]
                     sample = samples[row]
@@ -298,15 +237,13 @@ def render_with_params(x, patterns, fast=False):
                     mix[offset:end, 1] += sample[:length] * vol
             global_step += 1
 
-    # Post-mix parametric EQ (shapes MFCC[2-3])
     from scipy.signal import butter, sosfilt
     for band_prefix in ['eq_low', 'eq_mid', 'eq_hi']:
         gain_db = p.get(band_prefix + '_gain_db', 0.0)
         freq = p.get(band_prefix + '_freq', 1000.0)
         if abs(gain_db) > 0.1 and 20 < freq < sr / 2 - 1:
             gain_lin = 10 ** (gain_db / 20)
-            # Bell filter: extract band, scale, add back
-            bw = freq * 0.7  # bandwidth ~0.7 octave
+            bw = freq * 0.7
             low = max(20, freq - bw / 2)
             high = min(sr / 2 - 1, freq + bw / 2)
             if high > low + 10:
@@ -315,10 +252,8 @@ def render_with_params(x, patterns, fast=False):
                     band = sosfilt(sos, mix[:, ch])
                     mix[:, ch] += band * (gain_lin - 1)
 
-    # Delay
     mix = apply_delay(mix, p, sr)
 
-    # Reverb (deterministic seed for reproducibility)
     rng_state = np.random.get_state()
     np.random.seed(42)
     ir = generate_reverb_ir(p['reverb_length'], dark=p['reverb_dark'], sr=sr)
@@ -327,7 +262,6 @@ def render_with_params(x, patterns, fast=False):
         wet = fftconvolve(mix[:, ch], ir[:, ch])[:mix.shape[0]]
         mix[:, ch] += wet * p['reverb_wet']
 
-    # Apply reference-matched volume envelope
     ref_env = get_reference_envelope(sr)
     if ref_env is not None:
         rms_ref, ref_times, env_sr, frame_len, hop = ref_env
@@ -351,14 +285,12 @@ def render_with_params(x, patterns, fast=False):
         mix[:, 0] *= gain_interp
         mix[:, 1] *= gain_interp
 
-    # Normalize
     current_rms = np.sqrt(np.mean(mix ** 2))
     if current_rms > 0:
         gain = p['target_rms'] / current_rms
         mix *= gain
         mix = np.clip(mix, -0.95, 0.95)
 
-    # Downmix to mono and resample to COMPARE_SR
     mono = np.mean(mix, axis=1)
     if sr != COMPARE_SR:
         from scipy.signal import resample
@@ -369,14 +301,8 @@ def render_with_params(x, patterns, fast=False):
 
 
 def render_stereo(x, patterns, sr=SR):
-    """Full render pipeline returning stereo audio at native sample rate.
-
-    Unlike render_with_params (which returns mono at COMPARE_SR for the
-    optimizer), this returns the full-quality stereo mix for .wav export.
-    """
     p = unpack_params(x)
 
-    # Pre-render samples
     freqs = p['freqs']
     samples = []
     for freq in freqs:
@@ -388,7 +314,6 @@ def render_stereo(x, patterns, sr=SR):
     total_steps = len(patterns) * STEPS_PER_PATTERN
     total_samples = total_steps * step_samples + max(len(s) for s in samples)
 
-    # Dry mix (stereo)
     mix = np.zeros((total_samples, 2))
 
     row_start_step = {}
@@ -412,7 +337,6 @@ def render_stereo(x, patterns, sr=SR):
                     mix[offset:end, 1] += sample[:length] * vol
             global_step += 1
 
-    # Post-mix parametric EQ
     from scipy.signal import butter, sosfilt
     for band_prefix in ['eq_low', 'eq_mid', 'eq_hi']:
         gain_db = p.get(band_prefix + '_gain_db', 0.0)
@@ -428,10 +352,8 @@ def render_stereo(x, patterns, sr=SR):
                     band = sosfilt(sos, mix[:, ch])
                     mix[:, ch] += band * (gain_lin - 1)
 
-    # Delay
     mix = apply_delay(mix, p, sr)
 
-    # Reverb
     rng_state = np.random.get_state()
     np.random.seed(42)
     ir = generate_reverb_ir(p['reverb_length'], dark=p['reverb_dark'], sr=sr)
@@ -440,7 +362,6 @@ def render_stereo(x, patterns, sr=SR):
         wet = fftconvolve(mix[:, ch], ir[:, ch])[:mix.shape[0]]
         mix[:, ch] += wet * p['reverb_wet']
 
-    # Reference envelope matching
     ref_env = get_reference_envelope(sr)
     if ref_env is not None:
         rms_ref, ref_times, env_sr, frame_len, hop = ref_env
@@ -464,7 +385,6 @@ def render_stereo(x, patterns, sr=SR):
         mix[:, 0] *= gain_interp
         mix[:, 1] *= gain_interp
 
-    # Normalize
     current_rms = np.sqrt(np.mean(mix ** 2))
     if current_rms > 0:
         gain = p['target_rms'] / current_rms
@@ -475,7 +395,6 @@ def render_stereo(x, patterns, sr=SR):
 
 
 def apply_delay(mix, p, sr):
-    """Vectorized stereo delay matching engine.js."""
     n = mix.shape[0]
     dl = int(0.33 * sr)
     dr = int(0.22 * sr)
@@ -483,14 +402,10 @@ def apply_delay(mix, p, sr):
     fb = p['delay_feedback']
 
     for ch, d in enumerate([dl, dr]):
-        # Vectorized delay with feedback using IIR-like approach
-        # delayed[i] = mix[i-d] + fb * delayed[i-d]
-        # This is equivalent to a geometric sum of delayed copies
         sig = mix[:, ch]
         delayed = np.zeros(n)
-        # Apply feedback taps (geometric decay, typically converges fast)
         tap = sig.copy()
-        for k in range(1, 20):  # max 20 feedback taps
+        for k in range(1, 20):
             tap_amp = fb ** k
             if tap_amp < 0.001:
                 break
@@ -504,29 +419,18 @@ def apply_delay(mix, p, sr):
     return out
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Multi-scale spectral loss (perceptual distance metric)
-#
-# Used by HiFi-GAN, EnCodec, SoundStream etc. Captures perceptual similarity
-# across multiple time scales without hand-tuned feature weights.
-# ══════════════════════════════════════════════════════════════════════════════
-
-# FFT sizes for multi-scale analysis: from fine (short window, good time
-# resolution) to coarse (long window, good frequency resolution)
 _MS_FFT_SIZES = [256, 512, 1024, 2048, 4096]
-_MS_HOP_DIVISOR = 4  # hop = fft_size / 4
+_MS_HOP_DIVISOR = 4
 
 _ref_spec_cache = {}
 
 
 def _compute_stft_mag(y, n_fft, hop_length):
-    """Compute STFT magnitude spectrogram."""
     S = librosa.stft(y, n_fft=n_fft, hop_length=hop_length)
     return np.abs(S)
 
 
 def _get_ref_spectrograms(y_ref, sr):
-    """Compute and cache multi-scale spectrograms for reference audio."""
     key = (len(y_ref), sr)
     if key in _ref_spec_cache:
         return _ref_spec_cache[key]
@@ -540,7 +444,6 @@ def _get_ref_spectrograms(y_ref, sr):
             'log_mag': np.log(mag + 1e-7),
         }
 
-    # Also cache mel spectrograms at multiple scales for mel loss
     for n_mels in [32, 64, 128]:
         for n_fft in [1024, 2048]:
             hop = n_fft // _MS_HOP_DIVISOR
@@ -553,12 +456,10 @@ def _get_ref_spectrograms(y_ref, sr):
     return specs
 
 
-# Legacy feature cache (for diagnostic metrics)
 _ref_features_cache = {}
 
 
 def _get_ref_features(y_ref, sr):
-    """Compute and cache reference features for diagnostic metrics."""
     key = (len(y_ref), sr)
     if key in _ref_features_cache:
         return _ref_features_cache[key]
@@ -577,11 +478,6 @@ def _get_ref_features(y_ref, sr):
 
 
 def compute_spectral_loss(y_ren, y_ref, sr=COMPARE_SR):
-    """Multi-scale spectral convergence + log-magnitude L1 loss.
-
-    This is the standard loss used by neural audio synthesis models.
-    Returns a single scalar distance that correlates with perceptual quality.
-    """
     ref_specs = _get_ref_spectrograms(y_ref, sr)
     n = min(len(y_ref), len(y_ren))
     y_ren = y_ren[:n]
@@ -599,17 +495,14 @@ def compute_spectral_loss(y_ren, y_ref, sr=COMPARE_SR):
         mr = mag_ref[:, :n_frames]
         mx = mag_ren[:, :n_frames]
 
-        # Spectral convergence: Frobenius norm of difference / norm of reference
         sc = np.linalg.norm(mr - mx) / (np.linalg.norm(mr) + 1e-7)
 
-        # Log-magnitude L1: mean absolute difference of log magnitudes
         log_mx = np.log(mx + 1e-7)
         log_l1 = np.mean(np.abs(log_ref[:, :n_frames] - log_mx))
 
-        total_loss += sc + log_l1 / 10.0  # scale log_l1 to similar range
+        total_loss += sc + log_l1 / 10.0
         n_scales += 1
 
-    # Multi-scale mel loss (captures timbral similarity)
     for n_mels in [32, 64, 128]:
         for n_fft in [1024, 2048]:
             hop = n_fft // _MS_HOP_DIVISOR
@@ -622,35 +515,26 @@ def compute_spectral_loss(y_ren, y_ref, sr=COMPARE_SR):
             mel_l1 = np.mean(np.abs(
                 mel_ref_db[:, :n_frames] - mel_ren_db[:, :n_frames]))
 
-            total_loss += mel_l1 / 20.0  # scale to similar range as spectral convergence
+            total_loss += mel_l1 / 20.0
             n_scales += 1
 
     return total_loss / n_scales
 
 
 def compute_composite(y_ren, y_ref, sr=COMPARE_SR):
-    """Compute perceptual distance using multi-scale spectral loss.
-
-    Primary metric: multi-scale spectral convergence + mel loss.
-    Also computes diagnostic sub-metrics for monitoring.
-    """
     n = min(len(y_ref), len(y_ren))
     y_ren = y_ren[:n]
 
     metrics = {}
 
-    # Primary: multi-scale spectral loss
     metrics['spectral_loss'] = compute_spectral_loss(y_ren, y_ref, sr)
 
-    # Diagnostic sub-metrics (not used for optimization, just monitoring)
     ref = _get_ref_features(y_ref, sr)
 
-    # MFCC distance
     mfcc_ren = librosa.feature.mfcc(y=y_ren, sr=sr, n_mfcc=13)
     metrics['mfcc'] = min(
         float(np.linalg.norm(ref['mfcc_mean'] - np.mean(mfcc_ren, axis=1))) / 200, 1.0)
 
-    # Onset density
     onsets_ren_t = librosa.onset.onset_detect(y=y_ren, sr=sr, units='time')
     rate_ren = len(onsets_ren_t) / max(len(y_ren)/sr, 0.1)
     if ref['onset_rate'] == 0 and rate_ren == 0:
@@ -658,7 +542,6 @@ def compute_composite(y_ren, y_ref, sr=COMPARE_SR):
     else:
         metrics['onset_density'] = abs(ref['onset_rate'] - rate_ren) / max(ref['onset_rate'], rate_ren)
 
-    # RMS correlation
     fl = int(sr * 0.05)
     hl = fl // 2
     rms_ren = librosa.feature.rms(y=y_ren, frame_length=fl, hop_length=hl)[0]
@@ -669,29 +552,18 @@ def compute_composite(y_ren, y_ref, sr=COMPARE_SR):
         corr = float(np.corrcoef(ref['rms'][:nr], rms_ren[:nr])[0, 1])
         metrics['rms_correlation'] = max(0, 1 - corr)
 
-    # Pitch class similarity
     ch_ren = librosa.feature.chroma_stft(y=y_ren, sr=sr)
     hn = np.mean(ch_ren, axis=1)
     dot = np.dot(ref['chroma_mean'], hn)
     norm = np.linalg.norm(ref['chroma_mean']) * np.linalg.norm(hn)
     metrics['pitch_class'] = max(0, 1 - dot/norm) if norm > 1e-8 else 1.0
 
-    # Composite = spectral loss (the perceptual metric drives optimization)
     composite = metrics['spectral_loss']
 
     return composite, metrics
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# E-step: Infer button presses from reference audio
-# ══════════════════════════════════════════════════════════════════════════════
-
 def infer_buttons(y_ref, sr, freqs, step_ms):
-    """Infer button press timeline from reference audio.
-
-    Returns list of patterns, each a dict of (row, col) → velocity.
-    """
-    # Detect onsets and pitches
     onsets_samples = librosa.onset.onset_detect(y=y_ref, sr=sr, units='samples', backtrack=True)
 
     events = []
@@ -709,7 +581,6 @@ def infer_buttons(y_ref, sr, freqs, step_ms):
         except Exception:
             continue
 
-        # Map to row
         best_row, best_dist = -1, float('inf')
         for row, ref_freq in enumerate(freqs):
             for oct in [-1, 0, 1]:
@@ -737,18 +608,14 @@ def infer_buttons(y_ref, sr, freqs, step_ms):
 
     n_patterns = max(e['pattern_idx'] for e in events) + 1
 
-    # Group by pattern
     patterns_events = [[] for _ in range(n_patterns)]
     for event in events:
         if 0 <= event['pattern_idx'] < n_patterns:
             patterns_events[event['pattern_idx']].append(event)
 
-    # Infer active cells per pattern
-    # Key insight: each row's sequence phase starts when it's first activated,
-    # NOT from a global clock. So we must try all possible phase offsets.
     inferred = []
     cumulative_cells = set()
-    row_start_step = {}  # row -> global_step when first activated
+    row_start_step = {}
 
     for pi, pe in enumerate(patterns_events):
         pattern_start = pi * STEPS_PER_PATTERN
@@ -756,13 +623,10 @@ def infer_buttons(y_ref, sr, freqs, step_ms):
         pattern_cells = {}
 
         for row in rows_in_pattern:
-            # Record activation step for newly seen rows
             if row not in row_start_step:
                 row_start_step[row] = pattern_start
 
-            # Get global steps where this row triggered
             row_global_steps = [e['global_step'] for e in pe if e['row'] == row]
-            # Convert to row-local sequence indices using the row's phase
             row_local_indices = set(
                 (gs - row_start_step[row]) % SEQ_LEN for gs in row_global_steps
             )
@@ -792,10 +656,6 @@ def infer_buttons(y_ref, sr, freqs, step_ms):
 
     return inferred
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Block definitions for coordinate descent
-# ══════════════════════════════════════════════════════════════════════════════
 
 BLOCKS = {
     'A_synthesis': [
@@ -831,30 +691,22 @@ BLOCKS = {
 
 
 def get_block_indices(block_name):
-    """Get indices into PARAM_SPEC for a given block."""
     names = BLOCKS[block_name]
     return [PARAM_NAMES.index(n) for n in names]
 
 
 def optimize_block_cmaes(block_name, x_full, patterns, y_ref_compare, budget=200):
-    """Optimize one block of parameters using CMA-ES, holding others fixed.
-
-    Returns (improved_x_full, best_composite, n_evals).
-    """
     indices = get_block_indices(block_name)
     n_block = len(indices)
 
-    # Extract block values, bounds, and compute initial sigma
     x0_block = x_full[indices].copy()
     bounds_block = [PARAM_BOUNDS[i] for i in indices]
     lowers = np.array([b[0] for b in bounds_block])
     uppers = np.array([b[1] for b in bounds_block])
 
-    # Initial sigma: ~10% of range for each parameter
     ranges = uppers - lowers
     sigma0 = float(np.median(ranges * 0.10))
 
-    # Scaling: normalize to [0, 1] for CMA-ES
     def to_unit(x_block):
         return (x_block - lowers) / ranges
 
@@ -885,7 +737,6 @@ def optimize_block_cmaes(block_name, x_full, patterns, y_ref_compare, budget=200
             print(f"      [{block_name}] eval {eval_count[0]:3d}: ERROR {e}")
             return 1.0
 
-    # CMA-ES options
     popsize = max(8, 2 * n_block)
     maxiter = max(10, budget // popsize)
 
@@ -893,10 +744,10 @@ def optimize_block_cmaes(block_name, x_full, patterns, y_ref_compare, budget=200
         'popsize': popsize,
         'maxiter': maxiter,
         'maxfevals': budget,
-        'bounds': [0, 1],  # unit space
+        'bounds': [0, 1],
         'tolfun': 1e-4,
         'tolx': 1e-4,
-        'verbose': -9,  # suppress CMA-ES output
+        'verbose': -9,
         'seed': int(time.time()) % 2**31,
     }
 
@@ -914,11 +765,6 @@ def optimize_block_cmaes(block_name, x_full, patterns, y_ref_compare, budget=200
 
 
 def optimize_joint_cmaes(x_full, patterns, y_ref_compare, budget=500):
-    """Optimize ALL parameters jointly using CMA-ES.
-
-    Uses larger population and sigma for broad exploration.
-    Returns (improved_x_full, best_composite, n_evals).
-    """
     n = len(x_full)
     lowers = np.array([b[0] for b in PARAM_BOUNDS])
     uppers = np.array([b[1] for b in PARAM_BOUNDS])
@@ -950,7 +796,7 @@ def optimize_joint_cmaes(x_full, patterns, y_ref_compare, budget=500):
         except Exception as e:
             return 1.0
 
-    popsize = max(20, 2 * n)  # larger population for 34 dims
+    popsize = max(20, 2 * n)
     maxiter = max(15, budget // popsize)
 
     opts = {
@@ -962,7 +808,7 @@ def optimize_joint_cmaes(x_full, patterns, y_ref_compare, budget=500):
         'tolx': 1e-5,
         'verbose': -9,
         'seed': int(time.time()) % 2**31,
-        'CMA_active': True,  # active CMA for faster convergence
+        'CMA_active': True,
     }
 
     try:
@@ -976,10 +822,6 @@ def optimize_joint_cmaes(x_full, patterns, y_ref_compare, budget=500):
 
     return best_x[0], best_composite[0], eval_count[0]
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Main optimization loop
-# ══════════════════════════════════════════════════════════════════════════════
 
 def main():
     parser = argparse.ArgumentParser(
@@ -1004,18 +846,14 @@ def main():
         print(f"ERROR: {ref_path} not found")
         sys.exit(1)
 
-    # Load reference at comparison SR
     print(f"Loading reference: {ref_path}")
     y_ref_compare, _ = librosa.load(ref_path, sr=COMPARE_SR, mono=True)
     print(f"  Duration: {len(y_ref_compare)/COMPARE_SR:.1f}s")
 
-    # Also load at full SR for onset/pitch detection
     y_ref_full, _ = librosa.load(ref_path, sr=SR, mono=True)
 
-    # Start with current best parameters
     x = PARAM_DEFAULTS.copy()
 
-    # Current patterns (from render_original.py)
     from render_original import PATTERNS as current_patterns
 
     patterns = current_patterns
@@ -1023,7 +861,6 @@ def main():
     best_x = x.copy()
     best_patterns = patterns
 
-    # Initial evaluation
     print("\nInitial evaluation...")
     t0 = time.time()
     y_init = render_with_params(x, patterns, fast=False)
@@ -1034,9 +871,7 @@ def main():
     best_composite = c_init
     best_x = x.copy()
 
-    # Select blocks
     block_order = args.blocks or list(BLOCKS.keys())
-    # Validate
     for b in block_order:
         if b not in BLOCKS:
             print(f"ERROR: unknown block '{b}'. Available: {list(BLOCKS.keys())}")
@@ -1047,7 +882,6 @@ def main():
         print(f"EM ITERATION {em_iter + 1} / {args.em_iters}")
         print(f"{'='*70}")
 
-        # ── E-step: Infer buttons ────────────────────────────────────────
         if not args.skip_estep:
             print("\n[E-step] Inferring button presses...")
             p = unpack_params(x)
@@ -1057,7 +891,6 @@ def main():
                 total_cells = sum(len(pat) for pat in inferred)
                 print(f"  Inferred {n_inf} patterns, {total_cells} total cells")
 
-                # Test inferred vs current
                 print("  Comparing inferred vs current patterns...")
                 y_inferred = render_with_params(x, inferred, fast=False)
                 c_inferred, _ = compute_composite(y_inferred, y_ref_compare)
@@ -1076,7 +909,6 @@ def main():
             else:
                 print("  No patterns inferred, keeping current")
 
-        # ── M-step ─────────────────────────────────────────────────────────
         if args.joint:
             print(f"\n[M-step] Joint CMA-ES optimization "
                   f"({len(PARAM_SPEC)} params, budget={args.budget})")
@@ -1147,10 +979,8 @@ def main():
                     x = x_before
                     print(f"    -> No improvement ({n_evals} evals), reverting")
 
-        # End of M-step summary
         print(f"\n  M-step complete. Best composite: {best_composite:.4f}")
 
-    # ── Final evaluation at full quality ──────────────────────────────────
     print(f"\n{'='*70}")
     print("FINAL EVALUATION (full quality)")
     print(f"{'='*70}")
@@ -1162,7 +992,6 @@ def main():
     for k, v in sorted(m_final.items()):
         print(f"  {k:25s}: {v:.4f}")
 
-    # Save optimized parameters
     p = unpack_params(best_x)
     out = {
         'composite': c_final,
@@ -1180,7 +1009,6 @@ def main():
         json.dump(out, f, indent=2)
     print(f"\nSaved: {out_path}")
 
-    # Print code to apply
     print(f"\n{'='*70}")
     print("CODE TO APPLY")
     print(f"{'='*70}")

@@ -1,290 +1,158 @@
-"""Generate voices mode audio assets.
-
-Vocal synthesis: glottal pulse model + formant filters.
-Choir discovering music — long sustained vowels, human vibrato,
-overtone singing, percussive clicks for contrast.
-"""
-
-import os
 import numpy as np
 from common import (
-    SR, sine, noise,
+    SR, sine, noise, FORMANTS,
     env_adsr, env_exp_decay, lowpass, highpass, bandpass,
-    normalize, fade_in, fade_out,
-    to_stereo, mix_stereo, export_ogg, write_manifest, generate_reverb_ir,
+    normalize, fade_in, fade_out, f0_contour, glottal_flow, vocal_tract,
+    scale_tract, fold_to_voice, smooth_noise,
+    to_stereo, export_ogg, write_sprite, write_manifest, generate_reverb_ir,
 )
 
-FREQS = [523, 440, 370, 311, 262, 220, 175, 147, 123, 104, 82, 65, 55, 44, 33, 25]
-MEL_FREQS = [659, 523, 440, 349, 262, 220, 175, 131]
+FREQS = [659, 587, 523, 466, 415, 370, 330, 294,
+         262, 233, 208, 185, 165, 147, 131, 110]
+MEL_FREQS = [523, 466, 415, 370, 330, 294, 262, 220]
 
 DURATIONS = {
     'throat': 3.0, 'overtone': 3.0, 'breath': 2.5, 'belt': 2.5, 'click': 0.8,
     'aah': 2.8, 'ooh': 2.8, 'mmm': 2.8,
 }
 
-# Formant tables: (freq, bandwidth, gain_db)
-FORMANTS = {
-    'a': [(730, 90, 0), (1090, 110, -6), (2440, 170, -14), (3400, 250, -20)],
-    'i': [(270, 60, 0), (2290, 200, -6), (3010, 200, -14), (3300, 250, -20)],
-    'u': [(300, 60, 0), (870, 100, -6), (2240, 170, -14), (3200, 250, -20)],
-    'e': [(530, 80, 0), (1840, 150, -6), (2480, 180, -14), (3320, 250, -20)],
-    'o': [(570, 80, 0), (840, 100, -6), (2410, 170, -14), (3400, 250, -20)],
+TRACT = {
+    'throat': 1.18, 'overtone': 1.10, 'breath': 1.0, 'belt': 0.94,
+    'aah': 1.0, 'ooh': 1.02, 'mmm': 1.05,
 }
 
 
-def glottal_pulse(f0, dur, sr=SR, open_quotient=0.6):
-    """Rosenberg glottal pulse model with gentle jitter and shimmer."""
-    n = int(sr * dur)
-    jitter = np.cumsum(np.random.normal(0, f0 * 0.002, n)) / sr
-    phase = np.cumsum((f0 + jitter * f0 * 0.15) / sr)
-    cycle_pos = phase % 1
-    oq = open_quotient
-    pulse = np.where(
-        cycle_pos < oq,
-        3 * (cycle_pos / oq) ** 2 - 2 * (cycle_pos / oq) ** 3,
-        0
-    )
-    shimmer = 1 + np.random.normal(0, 0.015, n)
-    pulse *= shimmer
-    pulse = np.diff(pulse, prepend=0)
-    return pulse
+def sung(freq, dur, vowel_from, vowel_to, tract, sr=SR,
+         oq=0.6, vibrato=18, rate=5.0, aspiration=0.02, drift=0):
+    f0 = fold_to_voice(freq)
+    contour = f0_contour(f0, dur, sr, vibrato_rate=rate, vibrato_cents=vibrato,
+                         jitter=0.004, drift_cents=drift)
+    source = glottal_flow(contour, sr, open_quotient=oq, shimmer=0.025,
+                          aspiration=aspiration)
+    return vocal_tract(source,
+                       scale_tract(FORMANTS[vowel_from], tract),
+                       scale_tract(FORMANTS[vowel_to], tract), sr)
 
-
-def formant_filter(sig, formants, sr=SR):
-    """Apply parallel formant filter bank."""
-    out = np.zeros_like(sig)
-    for f, bw, gain in formants:
-        low = max(20, f - bw / 2)
-        high = min(sr / 2 - 100, f + bw / 2)
-        if low >= high:
-            continue
-        filtered = bandpass(sig, low, high, sr, order=2)
-        out += filtered * (10 ** (gain / 20))
-    return out
-
-
-def pitch_track_formants(base_formants, freq):
-    """Adjust formants for low frequencies to avoid unnatural timbre.
-
-    When fundamental is low, formants need to shift down slightly
-    to maintain natural vocal character.
-    """
-    if freq >= 150:
-        return base_formants
-    # Scale factor: at 25Hz, shift formants down ~30%
-    scale = 0.7 + 0.3 * min(1, freq / 150)
-    return [(f * scale, bw * scale, g) for f, bw, g in base_formants]
-
-
-def add_vibrato(sig, f0, rate=5.0, depth_cents=30, sr=SR):
-    """Apply gentle vibrato by resampling."""
-    n = len(sig)
-    t = np.arange(n) / sr
-    onset = np.clip(t / 0.3, 0, 1)
-    mod = depth_cents / 1200 * np.sin(2 * np.pi * rate * t) * onset
-    indices = np.arange(n) + mod * sr / max(f0, 20)
-    indices = np.clip(indices, 0, n - 1).astype(int)
-    return sig[indices]
-
-
-def add_breathiness(sig, amount=0.06, sr=SR):
-    """Mix gentle filtered noise for breathiness."""
-    n = len(sig)
-    breath = np.random.uniform(-1, 1, n)
-    breath = bandpass(breath, 800, min(5000, sr / 2 - 100), sr) * amount
-    return sig + breath[:n]
-
-
-# ======================== INSTRUMENTS ========================
 
 def gen_throat(freq, sr=SR):
-    """Deep throat singing — warm, dark, with subtle subharmonic."""
     dur = DURATIONS['throat']
     n = int(sr * dur)
-
-    source = glottal_pulse(freq, dur, sr, open_quotient=0.5)
-
-    # Dark formants with pitch tracking
-    formants = pitch_track_formants(
-        [(200, 80, 0), (600, 100, -4), (1200, 120, -12)], freq)
-    sig = formant_filter(source, formants)
-    sig = lowpass(sig, max(200, min(1200, freq * 4)), sr)
-
-    sub = sine(max(20, freq * 0.5), dur, sr) * 0.15
+    sig = sung(freq, dur, 'u', 'o', TRACT['throat'], sr,
+               oq=0.48, vibrato=12, rate=4.4, aspiration=0.015)
+    sub = sine(fold_to_voice(freq) / 2, dur, sr) * 0.12
     sig = sig[:n] + sub[:n]
-
-    sig = add_vibrato(sig, freq, rate=4.5, depth_cents=20, sr=sr)
-    sig = add_breathiness(sig, 0.04, sr)
-    env = env_adsr(dur, 0.15, 0.3, 0.7, 0.5, sr)
-    sig *= env[:len(sig)]
-
+    sig *= env_adsr(dur, 0.18, 0.3, 0.72, 0.6, sr)[:n]
     return normalize(to_stereo(sig, 0), 0.85)
 
 
 def gen_overtone(freq, sr=SR):
-    """Overtone singing — clear harmonic isolation with warm base."""
     dur = DURATIONS['overtone']
     n = int(sr * dur)
+    f0 = fold_to_voice(freq)
+    contour = f0_contour(f0, dur, sr, vibrato_rate=3.8, vibrato_cents=8, jitter=0.003)
+    source = glottal_flow(contour, sr, open_quotient=0.55, shimmer=0.02, aspiration=0.01)
 
-    source = glottal_pulse(freq, dur, sr, open_quotient=0.6)
+    base = vocal_tract(source, scale_tract(FORMANTS['u'], TRACT['overtone']), sr=sr)
 
-    base_formants = pitch_track_formants(FORMANTS['o'], freq)
-    base = formant_filter(source, base_formants) * 0.3
+    harmonic = 8 if f0 < 160 else 6 if f0 < 260 else 4
+    overtone = vocal_tract(source, [(min(f0 * harmonic, sr / 2 - 400), 45)], sr=sr)
+    peak = np.max(np.abs(overtone))
+    if peak > 0:
+        overtone = overtone / peak * np.max(np.abs(base)) * 0.9
 
-    harmonic = 3 if freq > 150 else 4 if freq > 80 else 5
-    h_freq = freq * harmonic
-    if h_freq < sr / 2 - 200:
-        overtone = bandpass(source, max(20, h_freq - 50), min(sr/2 - 100, h_freq + 50), sr)
-    else:
-        overtone = np.zeros(len(source))
-
-    sig = (base[:n] + overtone[:n] * 0.7)
-
-    sig = add_vibrato(sig, freq, rate=4.0, depth_cents=15, sr=sr)
-    sig = add_breathiness(sig, 0.06, sr)
-    env = env_adsr(dur, 0.2, 0.3, 0.6, 0.6, sr)
-    sig *= env[:len(sig)]
-
+    sig = base[:n] + overtone[:n]
+    sig *= env_adsr(dur, 0.25, 0.3, 0.7, 0.7, sr)[:n]
     return normalize(to_stereo(sig, 0), 0.85)
 
 
 def gen_breath(freq, sr=SR):
-    """Breathy whisper-singing — 90% air with pitched hint."""
     dur = DURATIONS['breath']
     n = int(sr * dur)
+    contour = f0_contour(fold_to_voice(freq), dur, sr, vibrato_cents=6, jitter=0.008)
+    voiced = glottal_flow(contour, sr, open_quotient=0.8, shimmer=0.05) * 0.12
+    air = highpass(np.random.uniform(-1, 1, n), 400, sr) * 0.9
 
-    source_noise = noise(dur, sr)
-    source_glottal = glottal_pulse(freq, dur, sr, open_quotient=0.7)
-    # 90% noise, 10% glottal — mostly air with just a hint of pitch
-    source = source_noise * 0.9 + source_glottal[:len(source_noise)] * 0.1
-
-    formants = pitch_track_formants(FORMANTS['a'], freq)
-    sig = formant_filter(source, formants)
-    sig = lowpass(sig, 6000, sr)
-
-    env = env_adsr(dur, 0.3, 0.3, 0.5, 0.6, sr)
-    sig *= env[:len(sig)] * 0.5
-
+    sig = vocal_tract(voiced[:n] + air,
+                      scale_tract(FORMANTS['e'], TRACT['breath']),
+                      scale_tract(FORMANTS['a'], TRACT['breath']), sr)
+    sig = lowpass(sig, 6500, sr)
+    sig *= env_adsr(dur, 0.35, 0.3, 0.6, 0.7, sr)[:n] * 0.6
     return normalize(to_stereo(sig, 0), 0.85)
 
 
 def gen_belt(freq, sr=SR):
-    """Full-voice belting — powerful, clean, trained singer. Tighter vibrato."""
     dur = DURATIONS['belt']
     n = int(sr * dur)
+    sig = sung(freq, dur, 'e', 'a', TRACT['belt'], sr,
+               oq=0.72, vibrato=26, rate=5.6, aspiration=0.012)
 
-    source = glottal_pulse(freq, dur, sr, open_quotient=0.75)
+    singers = vocal_tract(sig, [(2900, 160)], sr=sr)
+    peak = np.max(np.abs(singers))
+    if peak > 0:
+        singers = singers / peak * np.max(np.abs(sig)) * 0.35
+    sig = sig[:n] + singers[:n]
 
-    formants = pitch_track_formants(
-        [(800, 120, 0), (1200, 130, -3), (2800, 200, -10), (3500, 250, -16)], freq)
-    sig = formant_filter(source, formants)
-
-    # Tighter vibrato (25 cents instead of 35)
-    sig = add_vibrato(sig[:n], freq, rate=5.5, depth_cents=25, sr=sr)
-    sig = add_breathiness(sig, 0.04, sr)
-
-    env = env_adsr(dur, 0.06, 0.12, 0.85, 0.35, sr)
-    sig *= env[:len(sig)]
-
+    sig *= env_adsr(dur, 0.05, 0.15, 0.88, 0.4, sr)[:n]
     return normalize(to_stereo(sig, 0), 0.85)
 
 
 def gen_click(freq, sr=SR):
-    """Percussive vocal clicks — tongue clicks, plosive bursts for rhythmic contrast."""
     dur = DURATIONS['click']
     n = int(sr * dur)
+    f0 = fold_to_voice(freq)
     sig = np.zeros(n)
 
-    # Click type varies by pitch register
-    # Low pitches: deep tongue click, high: sharp alveolar click
-    if freq > 300:
-        # Sharp palatal click
-        burst = noise(0.003, sr)
-        burst = bandpass(burst, 2000, min(sr / 2 - 100, 8000), sr) * 0.8
-        sig[:len(burst)] = burst[:min(len(burst), n)]
-    elif freq > 100:
-        # Lateral tongue click
-        burst = noise(0.005, sr)
-        burst = bandpass(burst, 800, min(sr / 2 - 100, 4000), sr) * 0.7
-        sig[:len(burst)] = burst[:min(len(burst), n)]
-        # Resonant tail
-        tail = sine(freq, 0.04, sr) * 0.15
-        tail_env = env_exp_decay(0.04, 0.3, 0.015, sr)
-        tail *= tail_env
-        start = len(burst)
-        end = min(start + len(tail), n)
-        sig[start:end] += tail[:end - start]
+    if f0 > 300:
+        cavity = [(1800, 200), (3200, 300)]
+    elif f0 > 160:
+        cavity = [(900, 150), (2100, 250)]
     else:
-        # Deep glottal pop
-        burst = noise(0.008, sr)
-        burst = lowpass(burst, min(1500, sr / 2 - 100), sr) * 0.6
-        sig[:len(burst)] = burst[:min(len(burst), n)]
-        # Sub thump
-        thump = sine(max(20, freq), 0.06, sr) * 0.2
-        thump_env = env_exp_decay(0.06, 0.5, 0.02, sr)
-        thump *= thump_env
-        end = min(len(burst) + len(thump), n)
-        sig[len(burst):end] += thump[:end - len(burst)]
+        cavity = [(420, 110), (1300, 200)]
 
-    # Light room resonance
-    env = env_exp_decay(dur, 0.3, 0.08, sr)
-    sig *= env[:n]
+    burst_len = int(sr * 0.004)
+    burst = np.random.uniform(-1, 1, burst_len) * np.linspace(1, 0, burst_len) ** 2
+    click = vocal_tract(np.concatenate([burst, np.zeros(int(sr * 0.12))]), cavity, sr=sr)
+    click *= env_exp_decay(len(click) / sr, 0.2, 0.03, sr)[:len(click)]
+    sig[:min(len(click), n)] = click[:n]
 
+    tail = glottal_flow(f0_contour(f0, 0.07, sr, jitter=0.01), sr, open_quotient=0.5)
+    tail = vocal_tract(tail, cavity, sr=sr) * 0.25
+    tail *= env_exp_decay(0.07, 0.5, 0.02, sr)[:len(tail)]
+    end = min(burst_len + len(tail), n)
+    sig[burst_len:end] += tail[:end - burst_len]
+
+    return normalize(to_stereo(sig, 0), 0.85)
+
+
+def _vowel(freq, key, vowel, sr, oq=0.6, vibrato=14):
+    dur = DURATIONS[key]
+    n = int(sr * dur)
+    sig = sung(freq, dur, 'schwa', vowel, TRACT[key], sr,
+               oq=oq, vibrato=vibrato, rate=5.0, aspiration=0.018)
+    sig *= env_adsr(dur, 0.14, 0.25, 0.74, 0.6, sr)[:n]
     return normalize(to_stereo(sig, 0), 0.85)
 
 
 def gen_aah(freq, sr=SR):
-    """Open 'aah' vowel — sustained, gentle vibrato, pitch-tracking formants."""
-    dur = DURATIONS['aah']
-    n = int(sr * dur)
-
-    source = glottal_pulse(freq, dur, sr, open_quotient=0.6)
-    formants = pitch_track_formants(FORMANTS['a'], freq)
-    sig = formant_filter(source, formants)
-    sig = sig[:n]
-    sig = add_vibrato(sig, freq, rate=5, depth_cents=12, sr=sr)
-    sig = add_breathiness(sig, 0.02, sr)
-    env = env_adsr(dur, 0.12, 0.2, 0.7, 0.6, sr)
-    sig *= env[:len(sig)]
-
-    return normalize(to_stereo(sig, 0), 0.85)
+    return _vowel(freq, 'aah', 'a', sr)
 
 
 def gen_ooh(freq, sr=SR):
-    """Round 'ooh' vowel — sustained, warm, pitch-tracking formants."""
-    dur = DURATIONS['ooh']
-    n = int(sr * dur)
-
-    source = glottal_pulse(freq, dur, sr, open_quotient=0.55)
-    formants = pitch_track_formants(FORMANTS['u'], freq)
-    sig = formant_filter(source, formants)
-    sig = sig[:n]
-    sig = add_vibrato(sig, freq, rate=5, depth_cents=10, sr=sr)
-    sig = add_breathiness(sig, 0.02, sr)
-    env = env_adsr(dur, 0.12, 0.2, 0.7, 0.6, sr)
-    sig *= env[:len(sig)]
-
-    return normalize(to_stereo(sig, 0), 0.85)
+    return _vowel(freq, 'ooh', 'u', sr, oq=0.55, vibrato=11)
 
 
 def gen_mmm(freq, sr=SR):
-    """Closed 'mmm' — sustained gentle hum, pitch-tracking."""
     dur = DURATIONS['mmm']
     n = int(sr * dur)
+    contour = f0_contour(fold_to_voice(freq), dur, sr,
+                         vibrato_rate=4.6, vibrato_cents=9, jitter=0.004)
+    source = glottal_flow(contour, sr, open_quotient=0.45, shimmer=0.02)
 
-    source = glottal_pulse(freq, dur, sr, open_quotient=0.5)
-    lp_freq = max(200, min(500, freq * 3))
-    sig = lowpass(source, lp_freq, sr)
-    nasal_center = max(50, min(330, freq * 1.5))
-    nasal = bandpass(source,
-                     max(20, nasal_center - 50),
-                     min(sr / 2 - 100, nasal_center + 50), sr) * 0.25
-    sig = sig[:n] + nasal[:n]
-    sig = sig[:n]
-    sig = add_vibrato(sig, freq, rate=4.5, depth_cents=10, sr=sr)
-    env = env_adsr(dur, 0.12, 0.2, 0.75, 0.6, sr)
-    sig *= env[:len(sig)]
-
+    sig = vocal_tract(source,
+                      scale_tract(FORMANTS['n'], TRACT['mmm']),
+                      scale_tract(FORMANTS['m'], TRACT['mmm']), sr)
+    sig = lowpass(sig, 2200, sr)
+    sig *= env_adsr(dur, 0.16, 0.25, 0.78, 0.6, sr)[:n]
     return normalize(to_stereo(sig, 0), 0.85)
 
 
@@ -294,39 +162,81 @@ INSTRUMENTS = {
     'aah': gen_aah, 'ooh': gen_ooh, 'mmm': gen_mmm,
 }
 MEL_INSTS = {'aah', 'ooh', 'mmm'}
+LABELS = {inst_id: inst_id for inst_id in INSTRUMENTS}
 
 FX_CONFIG = {
-    'throat': {'delay': 0.12, 'reverb': 0.30, 'gain': 0.24},
-    'overtone': {'delay': 0.15, 'reverb': 0.35, 'gain': 0.20},
-    'breath': {'delay': 0.20, 'reverb': 0.45, 'gain': 0.16},
-    'belt': {'delay': 0.10, 'reverb': 0.25, 'gain': 0.26},
+    'throat': {'delay': 0.08, 'reverb': 0.10, 'gain': 0.26},
+    'overtone': {'delay': 0.10, 'reverb': 0.15, 'gain': 0.22},
+    'breath': {'delay': 0.12, 'reverb': 0.18, 'gain': 0.18},
+    'belt': {'delay': 0.06, 'reverb': 0.08, 'gain': 0.28},
     'click': {'delay': 0.06, 'reverb': 0.08, 'gain': 0.30},
     'aah': {'delay': 0.10, 'reverb': 0.20, 'gain': 0.22},
     'ooh': {'delay': 0.10, 'reverb': 0.20, 'gain': 0.20},
     'mmm': {'delay': 0.08, 'reverb': 0.15, 'gain': 0.22},
 }
 
+CONFIG = {
+    'id': 'voices',
+    'label': 'voices',
+    'mainGrids': [
+        {'rows': 16, 'cols': 32, 'defaultInstrument': 'throat'},
+        {'rows': 16, 'cols': 32, 'defaultInstrument': 'overtone'},
+        {'rows': 16, 'cols': 32, 'defaultInstrument': 'breath'},
+        {'rows': 16, 'cols': 32, 'defaultInstrument': 'belt'},
+    ],
+    'mainGridLayout': {'cols': 2},
+    'melodyGrids': [
+        {'rows': 8, 'cols': 32},
+        {'rows': 8, 'cols': 32},
+    ],
+    'melodyDefaultInstrument': 'aah',
+    'effects': {
+        'reverbWet': 0.15,
+        'reverbDark': 0.45,
+        'reverbLength': 2.5,
+        'delayL': 0.40,
+        'delayR': 0.28,
+        'delayFeedback': 0.20,
+        'delayDarkLP': 3000,
+        'delayWet': 0.12,
+        'compThreshold': -18,
+        'compRatio': 3,
+    },
+    'numPatterns': 8,
+    'defaultMelN': 2,
+    'cellSize': 16,
+    'fx': FX_CONFIG,
+}
+
 
 def generate(out_dir, sr=SR, fmt='ogg'):
-    manifest_insts = []
+    instruments = []
 
     for inst_id, gen_fn in INSTRUMENTS.items():
-        freqs = MEL_FREQS if inst_id in MEL_INSTS else FREQS
         is_mel = inst_id in MEL_INSTS
-
+        freqs = MEL_FREQS if is_mel else FREQS
         print(f'  {inst_id}: {len(freqs)} pitches')
-        manifest_insts.append({
-            'id': inst_id, 'label': inst_id,
+
+        segments = []
+        for freq in freqs:
+            sig = gen_fn(freq, sr)
+            fade_in(sig, 12, sr)
+            fade_out(sig, 90, sr)
+            segments.append(sig)
+
+        entry = {
+            'id': inst_id,
+            'label': LABELS[inst_id],
             'pitchCount': len(freqs),
             'type': 'melody' if is_mel else 'main',
-        })
+        }
+        entry.update(write_sprite(out_dir, inst_id, segments, sr, fmt))
+        instruments.append(entry)
 
-        for i, freq in enumerate(freqs):
-            sig = gen_fn(freq, sr)
-            sig = normalize(sig, 0.85)
-            path = os.path.join(out_dir, f'{inst_id}_{i}.{fmt}')
-            export_ogg(sig, path, sr)
+    ir = generate_reverb_ir(2.5, dark=0.45, sr=sr)
+    export_ogg(ir, f'{out_dir}/reverb_ir.{fmt}', sr)
 
-    ir = generate_reverb_ir(3.5, dark=0.65, sr=sr)
-    export_ogg(ir, os.path.join(out_dir, f'reverb_ir.{fmt}'), sr)
-    write_manifest(out_dir, manifest_insts, FX_CONFIG, fmt=fmt)
+    config = dict(CONFIG)
+    config['mainFreqs'] = FREQS
+    config['melodyFreqs'] = MEL_FREQS
+    write_manifest(out_dir, config, instruments, fmt=fmt)
