@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>polynome</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="loading">loading...</div>
+<div id="progress-bar"><div id="progress-fill"></div></div>
+<div id="main">
+  <div id="sidebar">
+    <div id="mode-col"></div>
+    <div id="ctrl-col">
+      <span id="ctl"></span>
+      <span id="gridToggle">simple</span>
+      <span id="btn-reset">reset</span>
+      <span id="btn-random">random</span>
+      <span id="btn-save">save</span>
+      <span id="btn-load">load</span>
+      <input type="range" id="speed" min="50" max="500" value="200">
+      <span id="bpm"></span>
+      <span id="cycleToggle">cycle off</span>
+      <input type="range" id="cycleLen" min="16" max="256" value="64" step="8">
+      <span id="cycleDisp"></span>
+      <input type="range" id="melN" min="1" max="8" value="2">
+      <span id="melNDisp"></span>
+      <input type="range" id="balance" min="0" max="100" value="50">
+      <span id="balDisp"></span>
+      <span id="canonToggle">canon off</span>
+    </div>
+    <div id="pat-col"></div>
+  </div>
+  <div id="content">
+    <div id="stage"></div>
+    <div id="mel-wrap">
+      <div class="inst" id="mel-inst-bar"></div>
+      <div id="mel-grids"></div>
+    </div>
+    <div id="canon-wrap">
+      <div class="inst" id="canon-mode-bar"></div>
+      <div id="canon-grids"></div>
+    </div>
+  </div>
+</div>
+<script type="module">
+import { initApp } from './js/ui.js';
+initApp();
+</script>
+</body>
+</html>
