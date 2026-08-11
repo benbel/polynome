@@ -16,6 +16,16 @@ body {
   height: 100%; background: #999; width: 0%; transition: width 0.1s;
 }
 
+/* Audio status — suspended context or missing assets. JS sets display. */
+#audio-hint {
+  display: none;
+  position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 20;
+  padding: 6px 14px; border: 1px solid #ddd; border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92); color: #777;
+  font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+  cursor: pointer; white-space: nowrap; max-width: 90vw; overflow: hidden; text-overflow: ellipsis;
+}
+
 #main {
   display: none; /* JS sets to flex */
   flex-direction: row; align-items: center; justify-content: center;

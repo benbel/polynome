@@ -109,10 +109,10 @@ def generate(out_dir, sr=SR, fmt='ogg'):
         export_ogg(sig, path, sr)
 
     ir = generate_reverb_ir(2.0, dark=0.5, sr=sr)
-    export_ogg(ir, os.path.join(out_dir, 'reverb_ir.ogg'), sr)
+    export_ogg(ir, os.path.join(out_dir, f'reverb_ir.{fmt}'), sr)
 
     write_manifest(out_dir, [
         {'id': 'tone', 'label': 'tone', 'pitchCount': len(freqs), 'type': 'main'}
     ], {
         'tone': {'delay': 0.15, 'reverb': 0.25, 'gain': 0.3}
-    })
+    }, fmt=fmt)

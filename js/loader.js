@@ -108,6 +108,7 @@ export async function loadMode(modeName, onProgress) {
 async function loadFromManifest(modeName, manifest, ctx, onProgress) {
   const buffers = {};
   const promises = [];
+  const ext = manifest.format || 'ogg';
   let loaded = 0;
   let total = 0;
 
@@ -118,22 +119,33 @@ async function loadFromManifest(modeName, manifest, ctx, onProgress) {
 
   for (const inst of manifest.instruments) {
     for (let i = 0; i < inst.pitchCount; i++) {
-      const url = `assets/${modeName}/${inst.id}_${i}.ogg`;
+      const url = `assets/${modeName}/${inst.id}_${i}.${ext}`;
       promises.push(
         fetch(url)
-          .then(r => r.arrayBuffer())
+          .then(r => { if (!r.ok) throw new Error(`${r.status} ${url}`); return r.arrayBuffer(); })
           .then(ab => ctx.decodeAudioData(ab))
           .then(buf => {
             buffers[inst.id][i] = buf;
             loaded++;
             if (onProgress) onProgress(loaded / total);
           })
+          // One bad file shouldn't silence the whole mode — keep the rest.
+          .catch(e => { console.warn('audio asset failed:', e.message || e); })
       );
     }
   }
 
   await Promise.all(promises);
   return buffers;
+}
+
+// Total number of decoded buffers across all instruments.
+export function bufferCount(buffers) {
+  let n = 0;
+  for (const id of Object.keys(buffers || {})) {
+    for (const b of buffers[id] || []) if (b) n++;
+  }
+  return n;
 }
 
 // ======================== SYNTHESIS FALLBACK ========================

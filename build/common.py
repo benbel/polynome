@@ -226,8 +226,9 @@ def export_ogg(stereo_signal, path, sr=SR):
         os.remove(wav_path)
 
 
-def write_manifest(out_dir, instruments, fx_config):
+def write_manifest(out_dir, instruments, fx_config, fmt='ogg'):
     manifest = {
+        'format': fmt,
         'instruments': [
             {
                 'id': inst['id'], 'label': inst['label'],

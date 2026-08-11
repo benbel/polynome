@@ -6,12 +6,44 @@ import {
   start, stop, restartTimer, resetAll, randomize,
   saveSong, loadSong, computeCanon,
 } from './engine.js';
-import { loadMode } from './loader.js';
+import { loadMode, bufferCount } from './loader.js';
 
 // Available modes — lazy-loaded
 const MODE_IDS = ['original', 'texture', 'clear', 'voices', 'speech'];
 const modeCache = {};
 const bufferCache = {}; // pre-loaded audio buffers per mode
+
+// ======================== AUDIO STATUS ========================
+// Two things silence the app while the grid keeps animating: an AudioContext
+// still suspended by the browser's autoplay policy (it only resumes inside a
+// user gesture), and a mode whose pre-rendered assets never loaded. Both are
+// reported in #audio-hint instead of failing quietly.
+
+let assetsMissing = false;
+
+function updateAudioHint() {
+  const el = document.getElementById('audio-hint');
+  if (!el) return;
+  let msg = '';
+  if (assetsMissing) msg = 'no audio assets — build them: cd build && python build.py';
+  else if (state.ctx && state.ctx.state !== 'running') msg = 'click anywhere for sound';
+  el.textContent = msg;
+  el.style.display = msg ? 'block' : 'none';
+}
+
+function resumeAudio() {
+  const ctx = state.ctx;
+  if (!ctx || ctx.state === 'running') return;
+  // Must be called synchronously from the gesture handler for Safari/iOS.
+  ctx.resume().then(updateAudioHint).catch(() => {});
+}
+
+function installAudioUnlock() {
+  const onGesture = () => resumeAudio();
+  for (const ev of ['pointerdown', 'touchstart', 'keydown']) {
+    window.addEventListener(ev, onGesture, { capture: true, passive: true });
+  }
+}
 
 // ======================== MODE SWITCHING ========================
 
@@ -41,6 +73,7 @@ export async function switchMode(modeId) {
   // Init audio context (don't await resume — it needs a user gesture)
   if (!state.ctx) {
     state.ctx = new AudioContext();
+    state.ctx.addEventListener('statechange', updateAudioHint);
   }
 
   // Use cached buffers if available (preloaded), otherwise show loading UI
@@ -62,6 +95,9 @@ export async function switchMode(modeId) {
     });
     bufferCache[modeId] = state.buffers;
   }
+
+  assetsMissing = bufferCount(state.buffers) === 0;
+  updateAudioHint();
 
   // Build effects chain
   buildEffects(mode.effects);
@@ -100,6 +136,7 @@ export async function switchMode(modeId) {
   loadPat(state.currentPattern);
   start();
   updateCtl();
+  updateAudioHint();
 }
 
 // ======================== BUILD UI ========================
@@ -402,6 +439,9 @@ function updateCtl() {
 // ======================== INIT ========================
 
 export function initApp() {
+  // Resume audio on the first user gesture (autoplay policy)
+  installAudioUnlock();
+
   // Mode column
   const modeCol = document.getElementById('mode-col');
   for (const id of MODE_IDS) {
