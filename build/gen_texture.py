@@ -454,6 +454,6 @@ def generate(out_dir, sr=SR, fmt='ogg'):
 
     # Generate reverb IR
     ir = generate_reverb_ir(3.5, dark=0.8, sr=sr)
-    export_ogg(ir, os.path.join(out_dir, 'reverb_ir.ogg'), sr)
+    export_ogg(ir, os.path.join(out_dir, f'reverb_ir.{fmt}'), sr)
 
-    write_manifest(out_dir, manifest_insts, FX_CONFIG)
+    write_manifest(out_dir, manifest_insts, FX_CONFIG, fmt=fmt)

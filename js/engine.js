@@ -502,7 +502,8 @@ export function tick() {
 
 export function start() {
   if (!state.ctx) return;
-  if (state.ctx.state === 'suspended') state.ctx.resume();
+  // Blocked outside a user gesture — ui.js retries on the first one.
+  if (state.ctx.state !== 'running') state.ctx.resume().catch(() => {});
   state.playing = true;
   tick();
   state.timer = setInterval(tick, state.stepMs);
