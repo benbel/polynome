@@ -1,4 +1,4 @@
-import os, json
+import os
 import numpy as np
 from common import (
     SR, sine, noise, env_exp_decay, env_adsr,
@@ -7,7 +7,7 @@ from common import (
     to_stereo, mix_stereo, export_ogg, write_sprite, write_manifest, generate_reverb_ir,
 )
 
-DEFAULT_FREQS = [448, 540, 585, 375, 322, 243, 239, 173]
+FREQS = [448, 540, 585, 375, 322, 243, 239, 173]
 
 COL_SEQS = [
     [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0],
@@ -95,7 +95,7 @@ CONFIG = {
     ],
 }
 
-DEFAULT_ENVELOPE = {
+ENVELOPE = {
     'attack_ms': 0.11,
     'decay_time': 0.259,
     'harmonic_ratios': [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 10.0, 12.0],
@@ -154,25 +154,9 @@ def gen_tone(freq, env_profile, sr=SR):
 
 
 def generate(out_dir, sr=SR, fmt='ogg'):
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    analysis_dir = os.path.join(root, 'analysis')
-
-    freqs = DEFAULT_FREQS
-    env_profile = DEFAULT_ENVELOPE
-
-    scale_path = os.path.join(analysis_dir, 'scale_detected.json')
-    if os.path.exists(scale_path):
-        with open(scale_path) as f:
-            scale = json.load(f)
-        freqs = scale['pitches_hz']
-
-    env_path = os.path.join(analysis_dir, 'envelope_profile.json')
-    if os.path.exists(env_path):
-        with open(env_path) as f:
-            env_profile = json.load(f)
-
+    freqs = FREQS
     print(f'  tone: {len(freqs)} pitches')
-    segments = [normalize(gen_tone(freq, env_profile, sr), 0.85) for freq in freqs]
+    segments = [normalize(gen_tone(freq, ENVELOPE, sr), 0.85) for freq in freqs]
 
     entry = {'id': 'tone', 'label': 'tone', 'pitchCount': len(freqs), 'type': 'main'}
     entry.update(write_sprite(out_dir, 'tone', segments, sr, fmt))

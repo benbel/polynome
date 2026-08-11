@@ -3,7 +3,7 @@ import json, os, sys
 import numpy as np
 import soundfile as sf
 
-MIN_PEAK = 0.05
+MIN_PEAK = 0.3
 
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 assets = os.path.join(root, 'assets')

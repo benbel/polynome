@@ -217,12 +217,7 @@ def generate(out_dir, sr=SR, fmt='ogg'):
         freqs = MEL_FREQS if is_mel else FREQS
         print(f'  {inst_id}: {len(freqs)} pitches')
 
-        segments = []
-        for freq in freqs:
-            sig = gen_fn(freq, sr)
-            fade_in(sig, 12, sr)
-            fade_out(sig, 90, sr)
-            segments.append(sig)
+        segments = [gen_fn(freq, sr) for freq in freqs]
 
         entry = {
             'id': inst_id,
