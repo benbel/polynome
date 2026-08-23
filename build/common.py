@@ -247,16 +247,22 @@ def mix_stereo(*signals):
 WRITE_BLOCK = 44100
 
 
-def export_ogg(stereo_signal, path, sr=SR):
+# Safari -- desktop and every iPhone -- has no Ogg Vorbis decoder, so an ogg
+# build is silent on iOS even though the page loads and animates normally.
+# MP3 is the lossy format every browser we target decodes.
+def export_audio(stereo_signal, path, sr=SR):
     signal = np.ascontiguousarray(np.clip(stereo_signal, -1, 1), dtype='float32')
+    ext = os.path.splitext(path)[1].lower()
 
-    if not path.endswith('.ogg'):
+    if ext == '.wav':
         wavfile.write(path, sr, (signal * 32767).astype(np.int16))
         return
+    if ext != '.mp3':
+        raise ValueError(f'{ext} is not a format browsers all decode: use .mp3 or .wav')
 
     channels = signal.shape[1] if signal.ndim > 1 else 1
     with soundfile.SoundFile(path, 'w', samplerate=sr, channels=channels,
-                             format='OGG', subtype='VORBIS') as f:
+                             format='MP3', subtype='MPEG_LAYER_III') as f:
         for i in range(0, len(signal), WRITE_BLOCK):
             f.write(signal[i:i + WRITE_BLOCK])
 
@@ -265,7 +271,7 @@ SPRITE_LEAD = 0.005
 SPRITE_GAP = 0.2
 
 
-def write_sprite(out_dir, inst_id, segments, sr=SR, fmt='ogg'):
+def write_sprite(out_dir, inst_id, segments, sr=SR, fmt='mp3'):
     lead = np.zeros((int(sr * SPRITE_LEAD), 2))
     gap = np.zeros((int(sr * SPRITE_GAP), 2))
     parts = []
@@ -282,7 +288,7 @@ def write_sprite(out_dir, inst_id, segments, sr=SR, fmt='ogg'):
         pos += len(block) + len(gap)
 
     audio = np.concatenate(parts) if parts else np.zeros((1, 2))
-    export_ogg(audio, os.path.join(out_dir, f'{inst_id}.{fmt}'), sr)
+    export_audio(audio, os.path.join(out_dir, f'{inst_id}.{fmt}'), sr)
 
     return {
         'sprite': f'{inst_id}.{fmt}',
@@ -291,7 +297,7 @@ def write_sprite(out_dir, inst_id, segments, sr=SR, fmt='ogg'):
     }
 
 
-def write_manifest(out_dir, config, instruments, fmt='ogg'):
+def write_manifest(out_dir, config, instruments, fmt='mp3'):
     manifest = dict(config)
     manifest['format'] = fmt
     manifest['sampleRate'] = SR

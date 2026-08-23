@@ -5,7 +5,7 @@ from common import (
     SR, sine, noise, env_exp_decay, env_adsr,
     lowpass, highpass, bandpass, comb_filter, high_shelf, low_shelf,
     asymmetric_saturate, normalize, fade_in, fade_out,
-    to_stereo, mix_stereo, export_ogg, write_sprite, write_manifest, generate_reverb_ir,
+    to_stereo, mix_stereo, export_audio, write_sprite, write_manifest, generate_reverb_ir,
 )
 
 # Eight rows, top-down: C5 A4 G4 E4 D4 C4 A3 G3.  The device this mode
@@ -174,7 +174,7 @@ def gen_tone(freq, env_profile, pan=0.0, sr=SR):
     return to_stereo(sig, pan) * np.sqrt(2)
 
 
-def generate(out_dir, sr=SR, fmt='ogg'):
+def generate(out_dir, sr=SR, fmt='mp3'):
     freqs = FREQS
     print(f'  tuning: {SCALE} on {ROOT} -- {music.spell(ROOT, SCALE, TOP, len(freqs))}')
     print(f'  tone: {len(freqs)} pitches')
@@ -185,7 +185,7 @@ def generate(out_dir, sr=SR, fmt='ogg'):
     entry.update(write_sprite(out_dir, 'tone', segments, sr, fmt))
 
     ir = generate_reverb_ir(2.0, dark=0.5, sr=sr)
-    export_ogg(ir, os.path.join(out_dir, f'reverb_ir.{fmt}'), sr)
+    export_audio(ir, os.path.join(out_dir, f'reverb_ir.{fmt}'), sr)
 
     config = dict(CONFIG)
     config['mainFreqs'] = list(freqs)

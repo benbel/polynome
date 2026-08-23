@@ -7,7 +7,7 @@ from common import (
     moog_ladder, tanh_saturate, comb_filter,
     f0_contour, glottal_flow, vocal_tract, scale_tract, fold_to_voice,
     normalize, fade_in, fade_out, to_stereo, mix_stereo,
-    export_ogg, write_sprite, write_manifest, generate_reverb_ir,
+    export_audio, write_sprite, write_manifest, generate_reverb_ir,
 )
 
 # One collection for the whole mode, so a melody note can never clash with
@@ -336,7 +336,7 @@ CONFIG = {
 }
 
 
-def generate(out_dir, sr=SR, fmt='ogg'):
+def generate(out_dir, sr=SR, fmt='mp3'):
     instruments = []
 
     print(f'  tuning: {SCALE} on {ROOT}')
@@ -360,7 +360,7 @@ def generate(out_dir, sr=SR, fmt='ogg'):
         instruments.append(entry)
 
     ir = generate_reverb_ir(2.5, dark=0.4, sr=sr)
-    export_ogg(ir, os.path.join(out_dir, f'reverb_ir.{fmt}'), sr)
+    export_audio(ir, os.path.join(out_dir, f'reverb_ir.{fmt}'), sr)
 
     config = dict(CONFIG)
     config['mainFreqs'] = FREQS

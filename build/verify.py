@@ -5,6 +5,11 @@ import soundfile as sf
 
 MIN_PEAK = 0.3
 
+# Every browser we target has to be able to decode the sprites. Safari (and so
+# every iPhone) has no Ogg Vorbis decoder, which makes an ogg build load
+# without error and then play nothing at all.
+PLAYABLE = {'.mp3', '.wav', '.m4a'}
+
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 assets = os.path.join(root, 'assets')
 index = os.path.join(assets, 'modes.json')
@@ -28,6 +33,10 @@ for mode in modes:
 
     for inst in instruments:
         sprite = os.path.join(assets, mode, inst['sprite'])
+        ext = os.path.splitext(sprite)[1].lower()
+        if ext not in PLAYABLE:
+            sys.exit(f'{mode}/' + inst['id'] + f': {ext} sprites are silent in Safari '
+                     'and on iOS -- rebuild with: python build/build.py --format mp3')
         if not os.path.exists(sprite) or os.path.getsize(sprite) == 0:
             sys.exit(f'{mode}: missing or empty ' + inst['sprite'])
         if len(inst['offsets']) != inst['pitchCount']:
