@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import music
 from common import (
     SR, sine, noise, env_exp_decay, env_adsr,
     lowpass, highpass, bandpass, comb_filter,
@@ -7,7 +8,12 @@ from common import (
     to_stereo, mix_stereo, export_ogg, write_sprite, write_manifest, generate_reverb_ir,
 )
 
-FREQS = [448, 540, 585, 375, 322, 243, 239, 173]
+# Eight rows, top-down: C5 A4 G4 E4 D4 C4 A3 G3.  The device this mode
+# ports used an untempered set that included a near-unison (243 and 239 Hz,
+# 29 cents apart), so two rows were effectively the same note beating
+# against itself.
+ROOT, SCALE, TOP = 'A', 'minor_pentatonic', 'C5'
+FREQS = music.descending_hz(ROOT, SCALE, TOP, 8)
 
 COL_SEQS = [
     [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0],
@@ -155,6 +161,7 @@ def gen_tone(freq, env_profile, sr=SR):
 
 def generate(out_dir, sr=SR, fmt='ogg'):
     freqs = FREQS
+    print(f'  tuning: {SCALE} on {ROOT} -- {music.spell(ROOT, SCALE, TOP, len(freqs))}')
     print(f'  tone: {len(freqs)} pitches')
     segments = [normalize(gen_tone(freq, ENVELOPE, sr), 0.85) for freq in freqs]
 

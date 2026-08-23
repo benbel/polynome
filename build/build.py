@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import argparse, importlib, json, os, sys
 
-MODES = ['original', 'texture', 'clear', 'voices', 'speech']
+MODES = ['original', 'ensemble']
 
 
 def main():
@@ -41,6 +41,11 @@ def main():
              if m in built or os.path.exists(os.path.join(assets, m, 'manifest.json'))]
     with open(os.path.join(assets, 'modes.json'), 'w') as f:
         json.dump(index, f)
+
+    stale = sorted(d for d in os.listdir(assets)
+                   if d not in MODES and os.path.isdir(os.path.join(assets, d)))
+    for d in stale:
+        print(f'[stale] assets/{d} is no longer a mode -- safe to delete')
 
     if not built:
         sys.exit('nothing built')

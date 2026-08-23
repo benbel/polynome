@@ -1,19 +1,35 @@
 import os
 import numpy as np
+import music
 from common import (
-    SR, sine, saw, pulse, noise,
+    SR, sine, saw, pulse, noise, FORMANTS,
     env_adsr, env_exp_decay, lowpass, highpass, bandpass,
     moog_ladder, tanh_saturate, comb_filter,
+    f0_contour, glottal_flow, vocal_tract, scale_tract, fold_to_voice,
     normalize, fade_in, fade_out, to_stereo, mix_stereo,
     export_ogg, write_sprite, write_manifest, generate_reverb_ir,
 )
 
-FREQS = [523, 440, 370, 311, 262, 220, 175, 147, 123, 104, 82, 65, 55, 44, 33, 25]
-MEL_FREQS = [659, 523, 440, 349, 262, 220, 175, 131]
+# One collection for the whole mode, so a melody note can never clash with
+# whatever the rhythm grids happen to be sounding underneath it.
+ROOT, SCALE = 'A', 'minor_pentatonic'
+
+# Main grids, 16 rows top-down: A5 down to A2.  Exactly three octaves, so
+# moving a cell five rows transposes it by an octave.  The previous table
+# bottomed out at 25 Hz -- the lowest three rows were inaudible on any
+# speaker without a subwoofer.
+MAIN_TOP = 'A5'
+FREQS = music.descending_hz(ROOT, SCALE, MAIN_TOP, 16)
+
+# Melody grids, 8 rows: A5 down to E4, sitting in the upper half of the
+# main range so the line floats above the bed rather than inside it.
+MEL_TOP = 'A5'
+MEL_FREQS = music.descending_hz(ROOT, SCALE, MEL_TOP, 8)
 
 DURATIONS = {
     'moog_bass': 2.5, 'pluck': 1.8, 'string_machine': 3.0,
     'sync': 2.0, 'bell': 3.0, 'wurli': 2.5, 'clav': 1.5, 'celesta': 2.5,
+    'aah': 2.8,
 }
 
 
@@ -237,12 +253,35 @@ def gen_celesta(freq, sr=SR):
     return to_stereo(result, 0)
 
 
+def gen_aah(freq, sr=SR):
+    """Sung 'ah' -- the one voice kept from the retired voices mode.
+
+    The glottal source is folded into a singable register before the
+    formant filters run, so it tracks the grid row by octave rather than
+    trying to sing A2.
+    """
+    dur = DURATIONS['aah']
+    n = int(sr * dur)
+
+    contour = f0_contour(fold_to_voice(freq), dur, sr,
+                         vibrato_rate=5.0, vibrato_cents=14, jitter=0.004)
+    source = glottal_flow(contour, sr, open_quotient=0.6, shimmer=0.025,
+                          aspiration=0.018)
+    sig = vocal_tract(source,
+                      scale_tract(FORMANTS['schwa'], 1.0),
+                      scale_tract(FORMANTS['a'], 1.0), sr)
+
+    sig *= env_adsr(dur, 0.14, 0.25, 0.74, 0.6, sr)[:n]
+    return normalize(to_stereo(sig[:n], 0), 0.85)
+
+
 INSTRUMENTS = {
     'moog_bass': gen_moog_bass, 'pluck': gen_pluck,
     'string_machine': gen_string_machine, 'sync': gen_sync, 'bell': gen_bell,
     'wurli': gen_wurli, 'clav': gen_clav, 'celesta': gen_celesta,
+    'aah': gen_aah,
 }
-MEL_INSTS = {'wurli', 'clav', 'celesta'}
+MEL_INSTS = {'wurli', 'clav', 'celesta', 'aah'}
 
 FX_CONFIG = {
     'moog_bass': {'delay': 0.08, 'reverb': 0.12, 'gain': 0.30},
@@ -253,18 +292,19 @@ FX_CONFIG = {
     'wurli': {'delay': 0.18, 'reverb': 0.25, 'gain': 0.20},
     'clav': {'delay': 0.10, 'reverb': 0.15, 'gain': 0.24},
     'celesta': {'delay': 0.25, 'reverb': 0.40, 'gain': 0.18},
+    'aah': {'delay': 0.12, 'reverb': 0.28, 'gain': 0.20},
 }
 
 
 LABELS = {
     'moog_bass': 'moog bass', 'pluck': 'pluck', 'string_machine': 'strings',
     'sync': 'sync', 'bell': 'bell', 'wurli': 'wurli', 'clav': 'clav',
-    'celesta': 'celesta',
+    'celesta': 'celesta', 'aah': 'voice',
 }
 
 CONFIG = {
-    'id': 'clear',
-    'label': 'clear',
+    'id': 'ensemble',
+    'label': 'ensemble',
     'mainGrids': [
         {'rows': 16, 'cols': 32, 'defaultInstrument': 'moog_bass'},
         {'rows': 16, 'cols': 32, 'defaultInstrument': 'pluck'},
@@ -298,6 +338,10 @@ CONFIG = {
 
 def generate(out_dir, sr=SR, fmt='ogg'):
     instruments = []
+
+    print(f'  tuning: {SCALE} on {ROOT}')
+    print(f'    main   {music.spell(ROOT, SCALE, MAIN_TOP, len(FREQS))}')
+    print(f'    melody {music.spell(ROOT, SCALE, MEL_TOP, len(MEL_FREQS))}')
 
     for inst_id, gen_fn in INSTRUMENTS.items():
         is_mel = inst_id in MEL_INSTS
