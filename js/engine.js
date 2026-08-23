@@ -314,6 +314,17 @@ function buildBuses() {
   }
 }
 
+// A grid can have fewer rows than its instrument has pitches -- the simple
+// grid is 8 rows against a 16-pitch instrument. Spread those rows over the
+// whole range instead of taking the top of it, so the low register does not
+// vanish when the grid is simplified. The pitch tables are pentatonic, so
+// every stride lands on a consonant degree.
+function pitchIndex(inst, row, rows) {
+  const buf = state.buffers[inst];
+  if (!buf || buf.length <= rows) return row;
+  return Math.min(buf.length - 1, row * Math.floor(buf.length / rows));
+}
+
 export function playNote(inst, fi, vol, time) {
   const s = state;
   const buf = s.buffers[inst];
@@ -360,6 +371,7 @@ function scheduleStep(step, time) {
   const mode = s.mode;
   const hasMelody = !!melGrids();
   const totalMelCols = melTotalCols();
+  const melRows = hasMelody ? melGrids()[0].rows : 0;
 
   if (s.autoCycle && step > 0 && step % s.cycleSteps === 0) {
     savePat(s.currentPattern);
@@ -401,7 +413,7 @@ function scheduleStep(step, time) {
           const vol = mode.stepVels
             ? a.vol * mode.stepVels[mod(step - (g.cols - 1), mode.seqLen)]
             : a.vol;
-          playNote(oI, parseInt(rs), vol * oldV * rhythmBal, time);
+          playNote(oI, pitchIndex(oI, parseInt(rs), g.rows), vol * oldV * rhythmBal, time);
         }
       }
       if (hasMelody && step % s.melN === 0) {
@@ -409,7 +421,8 @@ function scheduleStep(step, time) {
         for (const k of Object.keys(s.oldMelActive)) {
           const [rs, cs] = k.split('-');
           if (parseInt(cs) === mc) {
-            playNote(s.oldMelInst, parseInt(rs), s.oldMelActive[k].vol * oldV * melBal, time);
+            playNote(s.oldMelInst, pitchIndex(s.oldMelInst, parseInt(rs), melRows),
+                     s.oldMelActive[k].vol * oldV * melBal, time);
           }
         }
       }
@@ -425,7 +438,8 @@ function scheduleStep(step, time) {
       const vol = mode.stepVels
         ? a.vol * mode.stepVels[mod(step - (g.cols - 1), mode.seqLen)]
         : a.vol;
-      playNote(g.instrument, parseInt(rs), vol * newV * rhythmBal, time);
+      playNote(g.instrument, pitchIndex(g.instrument, parseInt(rs), g.rows),
+               vol * newV * rhythmBal, time);
     }
   }
 
@@ -434,14 +448,16 @@ function scheduleStep(step, time) {
     for (const k of Object.keys(s.melActive)) {
       const [rs, cs] = k.split('-');
       if (parseInt(cs) === mc) {
-        playNote(s.melInstrument, parseInt(rs), s.melActive[k].vol * newV * melBal, time);
+        playNote(s.melInstrument, pitchIndex(s.melInstrument, parseInt(rs), melRows),
+                 s.melActive[k].vol * newV * melBal, time);
       }
     }
     if (s.canonEnabled) {
       for (const k of Object.keys(s.canonActive)) {
         const [rs, cs] = k.split('-');
         if (parseInt(cs) === mc) {
-          playNote(s.melInstrument, parseInt(rs), s.canonActive[k].vol * newV * melBal, time);
+          playNote(s.melInstrument, pitchIndex(s.melInstrument, parseInt(rs), melRows),
+                   s.canonActive[k].vol * newV * melBal, time);
         }
       }
     }
