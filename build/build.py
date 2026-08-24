@@ -8,8 +8,10 @@ def main():
     parser = argparse.ArgumentParser(description='generate audio assets for polynome modes')
     parser.add_argument('modes', nargs='*', metavar='mode',
                         help=f'modes to build, any of: {", ".join(MODES)} (default: all)')
-    parser.add_argument('--format', default='ogg', choices=['ogg', 'wav'],
-                        help='audio file format (default: ogg)')
+    parser.add_argument('--format', default='mp3', choices=['mp3', 'wav'],
+                        help='audio file format (default: mp3). ogg is not offered: '
+                             'Safari and iOS cannot decode it, so an ogg build is '
+                             'silent on every iPhone')
     args = parser.parse_args()
 
     unknown = [m for m in args.modes if m not in MODES]

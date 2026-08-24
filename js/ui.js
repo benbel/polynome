@@ -23,8 +23,9 @@ function setStatus(msg) {
 }
 
 function refreshStatus() {
-  if (Object.keys(failed).length > 0) {
-    setStatus(`could not load ${Object.keys(failed).join(', ')}`);
+  const bad = Object.keys(failed);
+  if (bad.length > 0) {
+    setStatus(`could not load ${bad.join(', ')} — ${failed[bad[0]]}`);
   } else if (state.ctx && state.ctx.state !== 'running' && state.playing) {
     setStatus('click anywhere for sound');
   } else {
@@ -32,11 +33,35 @@ function refreshStatus() {
   }
 }
 
+// iOS puts a page that only uses Web Audio into the "ambient" audio session,
+// which the ring/silent switch mutes -- the page then looks like it is playing
+// while the phone stays quiet. Asking for "playback" opts into the media
+// session instead, the same one an <audio> element gets.
+function claimPlaybackSession() {
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = 'playback';
+  } catch (e) {  }
+}
+
+function createAudioContext() {
+  const Ctor = window.AudioContext || window.webkitAudioContext;
+  if (!Ctor) throw new Error('no Web Audio support');
+  return new Ctor();
+}
+
 function installAudioUnlock() {
   const resume = () => {
-    if (state.ctx && state.ctx.state !== 'running') {
-      state.ctx.resume().then(refreshStatus).catch(() => {});
-    }
+    const ctx = state.ctx;
+    if (!ctx) return;
+    if (ctx.state !== 'running') ctx.resume().then(refreshStatus).catch(() => {});
+    // Older iOS only lets go of the context once a source has actually run
+    // inside a user gesture; resume() alone leaves it silent.
+    try {
+      const src = ctx.createBufferSource();
+      src.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+      src.connect(ctx.destination);
+      src.start(0);
+    } catch (e) {  }
   };
   for (const ev of ['pointerdown', 'touchstart', 'keydown']) {
     window.addEventListener(ev, resume, { capture: true, passive: true });
@@ -52,7 +77,7 @@ export async function switchMode(modeId) {
     state.modePatterns[state.mode.id] = JSON.parse(JSON.stringify(state.patterns));
   }
 
-  if (!state.ctx) state.ctx = new AudioContext();
+  if (!state.ctx) state.ctx = createAudioContext();
 
   const loading = document.getElementById('loading');
   const main = document.getElementById('main');
@@ -67,9 +92,12 @@ export async function switchMode(modeId) {
     main.style.display = 'none';
 
     try {
-      const { config, buffers } = await loadMode(modeId, state.ctx, pct => {
+      const { config, buffers, errors } = await loadMode(modeId, state.ctx, pct => {
         progressFill.style.width = (pct * 100) + '%';
       });
+      // Every sprite failing to decode is the shape a codec this browser does
+      // not support takes: the page loads and animates, and plays nothing.
+      if (bufferCount(buffers) === 0) throw new Error(errors[0] || 'no audio');
       modeCache[modeId] = config;
       bufferCache[modeId] = buffers;
       delete failed[modeId];
@@ -337,6 +365,7 @@ function showMelN() {
 }
 
 export async function initApp() {
+  claimPlaybackSession();
   installAudioUnlock();
 
   try {
@@ -446,10 +475,13 @@ async function preloadRest() {
   for (const id of modeIds) {
     if (modeCache[id]) continue;
     try {
-      const { config, buffers } = await loadMode(id, state.ctx, () => {});
+      const { config, buffers, errors } = await loadMode(id, state.ctx, () => {});
+      if (bufferCount(buffers) === 0) {
+        failed[id] = errors[0] || 'no audio';
+        continue;
+      }
       modeCache[id] = config;
       bufferCache[id] = buffers;
-      if (bufferCount(buffers) === 0) failed[id] = 'no audio';
     } catch (e) {
       failed[id] = e.message;
     }
